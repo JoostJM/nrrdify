@@ -108,7 +108,7 @@ class DicomVolume:
     return im
 
   def build_filename(self):
-    patient_name = getattr(self.slices[0], 'PatientName', '').split('^')[0]
+    patient_name = str(getattr(self.slices[0], 'PatientName', '')).split('^')[0]
     study_date = getattr(self.slices[0], 'StudyDate', '19000101')
     series_description = getattr(self.slices[0], 'SeriesDescription', 'Unkn')
     series_number = getattr(self.slices[0], 'SeriesNumber', -1)
@@ -286,17 +286,16 @@ def main(source, destination, filename=None, fileformat='nrrd', overwrite=False,
     else:
       # Done scanning files, now make some NRRDs out of them!
       logger.info('Input folder scanned, found %d unique DICOM series', len(datasets))
-      if len(datasets) == 1:  # If only 1 series is found, a custom filename is possible
-        processVolume(datasets[list(datasets.keys())[0]], destination, filename, fileformat, overwrite)
-      else:
-        for ds in datasets:  # Multiple datasets, so generate name from DICOM
-          processVolume(datasets[ds], destination, fileformat=fileformat, overwrite=overwrite)
+      if len(datasets) > 1:  # If more than 1 series is found, a custom filename is not possible
+        filename = None
+      for ds in datasets:  # Multiple datasets, so generate name from DICOM
+        processVolume(datasets[ds], destination, filename, fileformat, overwrite)
 
 
 def processVolume(dicomVolume, destination, filename=None, fileformat='nrrd', overwrite=False):
   global logger
   try:
-    if len(dicomVolume.dicFiles()) == 0:  # No files for this series UID (maybe not image storage?)
+    if len(dicomVolume.slices) == 0:  # No files for this series UID (maybe not image storage?)
       logger.debug('No files for this series...')
       return
 
@@ -304,7 +303,7 @@ def processVolume(dicomVolume, destination, filename=None, fileformat='nrrd', ov
       logger.warning("Volume is 4D, skipping...")
       return
 
-    patient_name = getattr(dicomVolume[0], 'PatientName', '').split('^')[0]
+    patient_name = str(getattr(dicomVolume[0], 'PatientName', '')).split('^')[0]
     study_date = getattr(dicomVolume[0], 'StudyDate', '19000101')
     series_description = getattr(dicomVolume[0], 'SeriesDescription', 'Unkn')
     series_number = getattr(dicomVolume[0], 'SeriesNumber', -1)
