@@ -121,7 +121,10 @@ def processVolume(dicomVolume, destination, filename=None, fileformat='nrrd', ov
         return
 
     im = dicomVolume.getSimpleITKImage()
-    logger.info('Image file series read (%d files), storing in %s', len(dicomVolume.dicFiles()), filename)
+    if im is None:
+      return
+
+    logger.info('Image file series read (%d files), storing in %s', len(dicomVolume.slices), filename)
 
     sitk.WriteImage(im, filename)
   except:
