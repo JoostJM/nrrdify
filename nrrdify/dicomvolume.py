@@ -1,0 +1,220 @@
+#!/usr/bin/env python
+
+# ========================================================================
+#  Copyright Het Nederlands Kanker Instituut - Antoni van Leeuwenhoek
+#
+#  Licensed under the 3-clause BSD License
+# ========================================================================
+
+import logging
+import struct
+
+import numpy as np
+import SimpleITK as sitk
+
+
+class DicomVolume:
+
+  def __init__(self):
+    self.slices = []
+    self.slices4D = None
+    self.logger = logging.getLogger('nrrdify.DicomVolume')
+
+    self.is_valid = True
+    self.is_equidistant = True
+    self.is_sorted = False
+
+    self.is_4D = False
+    self.is_sorted4D = False
+
+  def __getitem__(self, item):
+    return self.slices[item]
+
+  def addSlice(self, dicFile):
+    self.slices += [dicFile]
+    self.is_sorted = False
+    self.is_sorted4D = False
+
+  def _check_valid(self):
+    required_tags = ['ImagePositionPatient']
+    identical_tags = ['ImageOrientationPatient']
+
+    for tag in required_tags:
+      for dfile in self.slices:
+        if getattr(dfile, tag, None) is None:
+          self.logger.error('No value found for tag %s in file %s, invalid series!', tag, dfile.filename)
+          return False
+    for tag in identical_tags:
+      val = getattr(self.slices[0], tag, None)
+      if val is None:
+        self.logger.error('No value found for tag %s in file %s, invalid series!', tag, self.slices[0].filename)
+        return False
+      for dfile in self.slices[1:]:
+        val2 = getattr(dfile, tag, None)
+        if val2 is None:
+          self.logger.error('No value found for tag %s in file %s, invalid series!', tag, dfile.filename)
+          return False
+        if not np.allclose(val, val2, rtol=1e-2):
+          self.logger.error('Non-matching values found for tag %s between files %s and %s',
+                            tag, self.slices[0].filename, dfile.filename)
+          return False
+    return True
+
+  def _get_slice_locations(self):
+    self.logger.debug('Calculation slice positions...')
+    image_orientation = self.slices[0].ImageOrientationPatient
+    xvector = image_orientation[:3]
+    yvector = image_orientation[3:]
+    zvector = np.cross(xvector, yvector)  # This function assumes that the Z axis of the image stack is orthogonal to the Y and X axis
+
+    locations = [np.dot(dfile.ImagePositionPatient, zvector) for dfile in self.slices]  # Z locations in mm of each slice
+    return locations
+
+  def _getImage(self, slices):
+    if len(slices) == 1:  # e.g. enhanced image format file, or 2D image
+      self.logger.debug('Single File, attempting SimpleITK.ReadImage')
+      im = sitk.ReadImage(slices[0].filename)
+    else:  # 'classic' DICOM file (1 file / slice)
+      reader = sitk.ImageSeriesReader()
+      self.logger.debug('Setting filenames for image reader...')
+      reader.SetFileNames([f.filename for f in slices])
+      self.logger.debug('Getting the image (%d files)...', len(slices))
+      im = reader.Execute()
+    return im
+
+  def build_filename(self):
+    patient_name = str(getattr(self.slices[0], 'PatientName', '')).split('^')[0]
+    study_date = getattr(self.slices[0], 'StudyDate', '19000101')
+    series_description = getattr(self.slices[0], 'SeriesDescription', 'Unkn')
+    series_number = getattr(self.slices[0], 'SeriesNumber', -1)
+
+    filename = '%s-%s-%s. %s' % (patient_name, study_date, series_number, series_description)
+    # Remove invalid characters from filename
+    for c in r'[]/\;,><&*:%=+@!#^()|?^':
+      filename = filename.replace(c, '')
+
+    return filename
+
+  def sortSlices(self):
+    if self.is_sorted:
+      return
+
+    if len(self.slices) < 2:
+      self.is_sorted = True
+      self.is_valid = True
+      self.is_equidistant = True
+      return
+
+    if not self._check_valid():
+      self.is_valid = False
+      return
+
+    locations = self._get_slice_locations()
+
+    # Check if all slices are equidistant
+    delta_slices = np.diff(np.array(sorted(locations)))
+
+    boundaries = delta_slices[delta_slices > 0.03]  # Exclude slice-distances that are 0 (indicating 4D volume)
+    if not np.allclose(boundaries, boundaries[0], rtol=1e-2):
+      self.logger.warning('Slices are not equidistant!')
+      self.logger.debug('Slice distances:\n%s', boundaries)
+      self.is_equidistant = False
+      return
+
+    if len(delta_slices) > len(boundaries):
+      self.logger.debug('DicomVolume is 4D')
+      self.is_4D = True
+
+    self.slices = [f for (d, f) in sorted(zip(locations, self.slices), key=lambda s: s[0])]
+    self.is_sorted = True
+
+  def getSimpleITKImage(self):
+    if not self.is_sorted:
+      self.sortSlices()
+
+    if not (self.is_valid and self.is_equidistant):
+      return
+
+    if self.is_4D:
+      self.logger.error('Cannot generate 3D image, DicomVolume is 4D!')
+      return
+
+    im = self._getImage(self.slices)
+    return im
+
+  def check_4D(self):
+    if not self.is_sorted:
+      self.sortSlices()
+
+    return self.is_4D
+
+  def split4D(self, splitTag='DiffusionBValue', max_value=None):
+    self.slices4D = {}
+    for s in self.slices:
+      temporal_position = getattr(s, splitTag, None)
+      if temporal_position is None:
+        self.logger.error('Split Tag %s not valid, missing value in file %s', splitTag, s.filename)
+        return False
+
+      if not str(temporal_position).isdigit():  # not a valid B value
+        try:
+          temporal_position = struct.unpack('d', temporal_position)[0]
+        except Exception:
+          self.logger.error('Error unpacking value for tag %s in file %s', splitTag, s.filename)
+          return False
+
+      if max_value is not None and temporal_position > max_value:
+        self.logger.warning('File %s excluded (temporal position (%d) exceeded max value %d)', s.filename, temporal_position, max_value)
+
+      if temporal_position not in self.slices4D:
+        self.slices4D[temporal_position] = []
+
+      self.slices4D[temporal_position].append(s)
+    return True
+
+  def sortSlices4D(self):
+    if self.is_sorted4D:
+      return True  # Slices already sorted, no re-sort needed
+
+    if self.slices4D is None:
+      logger.warning("DicomVolume needs to be split by temporal position before 4D sorting can occur")
+      return False
+
+    slice_count = None
+    for t in self.slices4D:
+      if slice_count is None:
+        slice_count = len(self.slices4D[t])
+      elif len(self.slices4D[t]) != slice_count:
+        self.logger.error('Different number of slices between temporal positions!')
+        return False
+
+      locations = self._get_slice_locations()
+      self.slices4D[t] = [f for (d, f) in sorted(zip(locations, self.slices4D[t]), key=lambda s: s[0])]
+
+    return True
+
+  def getSimpleITK4DImage(self, splitTag='DiffusionBValue', max_value=None):
+    if not self.is_sorted:
+      self.sortSlices()
+
+    if not (self.is_valid and self.is_equidistant):
+      return
+
+    if not self.is_4D:
+      self.logger.error('Cannot generate 4D image, DicomVolume is 3D!')
+      return
+
+    if self.slices4D is None:
+      if not self.split4D(splitTag, max_value):
+        return
+
+    if not self.is_sorted4D:
+      if not self.sortSlices4D():
+        return
+
+    ims = {}
+    for t in self.slices4D:
+      self.logger.debug('Processing temporal position %d', t)
+      ims[t] = self._getImage(self.slices4D[t])
+
+    return ims
