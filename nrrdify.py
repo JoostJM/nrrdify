@@ -37,6 +37,16 @@ import tqdm
 
 logger = logging.getLogger('nrrdify')
 
+if len(logger.handlers) == 0:
+  print('Adding handler for logger')
+  handler = logging.StreamHandler()
+  formatter = logging.Formatter('[%(asctime)-.19s] %(levelname)-.1s: %(message)s')
+  handler.setFormatter(formatter)
+  handler.setLevel(logging.INFO)
+
+  logger.addHandler(handler)
+  logger.setLevel(logging.INFO)
+
 
 class DicomVolume:
 
@@ -364,16 +374,6 @@ def checkVolume(dicomVolume, uid, volume_idx=None):
 
 
 if __name__ == '__main__':
-  if len(logger.handlers) == 0:
-    print('Adding handler for logger')
-    handler = logging.StreamHandler()
-    formatter = logging.Formatter('[%(asctime)-.19s] %(levelname)-.1s: %(message)s')
-    handler.setFormatter(formatter)
-    handler.setLevel(logging.INFO)
-
-    logger.addHandler(handler)
-    logger.setLevel(logging.INFO)
-
   parser = argparse.ArgumentParser()
   parser.add_argument("inputFolder", metavar="In", type=str, help="Folder containing the DICOM file(s) to convert.")
   parser.add_argument("--out", "-o", help="Folder to store converted files in. If omitted, stores "
