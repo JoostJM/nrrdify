@@ -27,7 +27,6 @@
 import logging
 import os
 import argparse
-import struct
 import traceback
 
 import dicom
@@ -41,18 +40,19 @@ logger = logging.getLogger('nrrdify')
 class DicomVolume:
 
   def __init__(self):
-    self._slices = []
+    self.slices = []
     self.logger = logging.getLogger('nrrdify.DicomVolume')
 
     self.is_valid = True
     self.is_equidistant = True
     self.is_sorted = False
+    self.is_4D = False
 
   def __getitem__(self, item):
-    return self._slices[item]
+    return self.slices[item]
 
   def addSlice(self, dicFile):
-    self._slices += [dicFile]
+    self.slices += [dicFile]
     self.is_sorted = False
 
   def _check_valid(self):
@@ -60,41 +60,41 @@ class DicomVolume:
     identical_tags = ['ImageOrientationPatient']
 
     for tag in required_tags:
-      for dfile in self._slices:
+      for dfile in self.slices:
         if getattr(dfile, tag, None) is None:
           self.logger.error('No value found for tag %s in file %s, invalid series!', tag, dfile.filename)
           return False
     for tag in identical_tags:
-      val = getattr(self._slices[0], tag, None)
+      val = getattr(self.slices[0], tag, None)
       if val is None:
-        self.logger.error('No value found for tag %s in file %s, invalid series!', tag, dicom_files[0].filename)
+        self.logger.error('No value found for tag %s in file %s, invalid series!', tag, self.slices[0].filename)
         return False
-      for dfile in self._slices[1:]:
+      for dfile in self.slices[1:]:
         val2 = getattr(dfile, tag, None)
         if val2 is None:
           self.logger.error('No value found for tag %s in file %s, invalid series!', tag, dfile.filename)
           return False
         if not np.allclose(val, val2, rtol=1e-2):
           self.logger.error('Non-matching values found for tag %s between files %s and %s',
-                       tag, self._slices[0].filename, dfile.filename)
+                            tag, self.slices[0].filename, dfile.filename)
           return False
     return True
 
   def _get_slice_locations(self):
     self.logger.debug('Calculation slice positions...')
-    image_orientation = self._slices[0].ImageOrientationPatient
+    image_orientation = self.slices[0].ImageOrientationPatient
     xvector = image_orientation[:3]
     yvector = image_orientation[3:]
     zvector = np.cross(xvector, yvector)  # This function assumes that the Z axis of the image stack is orthogonal to the Y and X axis
 
-    locations = [np.dot(dfile.ImagePositionPatient, zvector) for dfile in self._slices]  # Z locations in mm of each slice
+    locations = [np.dot(dfile.ImagePositionPatient, zvector) for dfile in self.slices]  # Z locations in mm of each slice
     return locations
 
   def build_filename(self):
-    patient_name = getattr(self._slices[0], 'PatientName', '').split('^')[0]
-    study_date = getattr(self._slices[0], 'StudyDate', '19000101')
-    series_description = getattr(self._slices[0], 'SeriesDescription', 'Unkn')
-    series_number = getattr(self._slices[0], 'SeriesNumber', -1)
+    patient_name = getattr(self.slices[0], 'PatientName', '').split('^')[0]
+    study_date = getattr(self.slices[0], 'StudyDate', '19000101')
+    series_description = getattr(self.slices[0], 'SeriesDescription', 'Unkn')
+    series_number = getattr(self.slices[0], 'SeriesNumber', -1)
 
     filename = '%s-%s-%s. %s' % (patient_name, study_date, series_number, series_description)
     # Remove invalid characters from filename
@@ -103,11 +103,8 @@ class DicomVolume:
 
     return filename
 
-  def dicFiles(self):
-    return self._slices
-
   def sortSlices(self):
-    if len(self._slices) < 2:
+    if len(self.slices) < 2:
       return
 
     if not self._check_valid():
@@ -118,20 +115,35 @@ class DicomVolume:
 
     # Check if all slices are equidistant
     delta_slices = np.diff(np.array(sorted(locations)))
-    if not np.allclose(delta_slices, delta_slices[0], rtol=1e-2):
-      logger.warning('Slices are not equidistant!')
-      logger.debug('Slice distances:\n%s', delta_slices)
+
+    boundaries = delta_slices[delta_slices > 0.03]  # Exclude slice-distances that are 0 (indicating 4D volume)
+    if not np.allclose(boundaries, boundaries[0], rtol=1e-2):
+      self.logger.warning('Slices are not equidistant!')
+      self.logger.debug('Slice distances:\n%s', boundaries)
       self.is_equidistant = False
       return
 
-    self._slices = [f for (d, f) in sorted(zip(locations, self._slices), key=lambda s: s[0])]
+    if len(delta_slices) > len(boundaries):
+      self.logger.debug('DicomVolume is 4D')
+      self.is_4D = True
+
+    self.slices = [f for (d, f) in sorted(zip(locations, self.slices), key=lambda s: s[0])]
     self.is_sorted = True
 
+  def check_4D(self):
+    if not self.is_sorted:
+      self.sortSlices()
+
+    return self.is_4D
+
   def getSimpleITKImage(self):
-    if len(self._slices) == 1:  # e.g. enhanced image format file, or 2D image
+    if self.is_4D:
+      self.logger.error('Cannot generate 3D image, dicom Volume is 4D!')
+      return
+    if len(self.slices) == 1:  # e.g. enhanced image format file, or 2D image
       self.logger.debug('Single File, attempting SimpleITK.ReadImage')
-      im = sitk.ReadImage(self._slices[0].filename)
-      self.logger.info('Single File read, storing in %s', self._slices[0].filename)
+      im = sitk.ReadImage(self.slices[0].filename)
+      self.logger.info('Single File read, storing in %s', self.slices[0].filename)
     else:  # 'classic' DICOM file (1 file / slice)
       if not self.is_sorted:
           self.sortSlices()
@@ -141,18 +153,18 @@ class DicomVolume:
 
       reader = sitk.ImageSeriesReader()
       self.logger.debug('Setting filenames for image reader...')
-      reader.SetFileNames([f.filename for f in self._slices])
-      self.logger.debug('Getting the image (%d files)...', len(self._slices))
+      reader.SetFileNames([f.filename for f in self.slices])
+      self.logger.debug('Getting the image (%d files)...', len(self.slices))
       im = reader.Execute()
     return im
 
 
-def main(source_folder, destination_folder, filename=None, fileformat='nrrd', overwrite=False, max_bval=1500, just_check=False):
+def main(source, destination, filename=None, fileformat='nrrd', overwrite=False, just_check=False):
   global logger
-  if os.path.isdir(source_folder) and os.path.isdir(destination_folder):
+  if os.path.isdir(source) and os.path.isdir(destination):
     logger.info('Input and output valid, scanning input folder for DICOM files')
     datasets = {}  # Holds the dicom files, sorted by series UID ({seriesUID: [files]})
-    for curdir, dirnames, fnames in os.walk(source_folder):
+    for curdir, dirnames, fnames in os.walk(source):
       if len(fnames) > 0:  # Only process folder if it contains files
         logger.info('Processing folder %s', curdir)
 
@@ -163,7 +175,7 @@ def main(source_folder, destination_folder, filename=None, fileformat='nrrd', ov
               with open(os.path.join(curdir, fname), mode='rb') as openFile:
                 openFile.seek(128)
                 header = openFile.read(4)
-                if header != 'DICM':
+                if header.decode() != 'DICM':
                   # Not a valid DICOM file, skip to next
                   continue  # Go to next file
 
@@ -176,23 +188,11 @@ def main(source_folder, destination_folder, filename=None, fileformat='nrrd', ov
               if sop_class is None or 'Image Storage' not in str(sop_class):
                 continue  # not image dicom file, so skip and go to next file
 
-              #b_value = getattr(dicfile, 'DiffusionBValue', None)
-              #if b_value is None:
-              #  continue
-              #if not str(b_value).isdigit():  # not a valid B value
-              #  try:
-              #    b_value = struct.unpack('d', b_value)
-              #  except Exception:
-              #    continue
-
-              #if b_value > max_bval:  # Do not use b values larger than max_bval (exclude e.g. b2000)
-              #  continue
-
               if series_uid not in datasets:
                 datasets[series_uid] = DicomVolume()
 
               datasets[series_uid].addSlice(dicfile)
-            except Exception as e:
+            except:
               logger.error('DOH!! Something went wrong \n\n%s' % traceback.format_exc())
     if just_check:
       for ds in datasets:
@@ -201,17 +201,21 @@ def main(source_folder, destination_folder, filename=None, fileformat='nrrd', ov
       # Done scanning files, now make some NRRDs out of them!
       logger.info('Input folder scanned, found %d unique DICOM series', len(datasets))
       if len(datasets) == 1:  # If only 1 series is found, a custom filename is possible
-        processVolume(datasets[datasets.keys()[0]], destination_folder, filename, fileformat, overwrite)
+        processVolume(datasets[list(datasets.keys())[0]], destination, filename, fileformat, overwrite)
       else:
         for ds in datasets:  # Multiple datasets, so generate name from DICOM
-          processVolume(datasets[ds], destination_folder, fileformat=fileformat, overwrite=overwrite)
+          processVolume(datasets[ds], destination, fileformat=fileformat, overwrite=overwrite)
 
 
-def processVolume(dicomVolume, destination_folder, filename=None, fileformat='nrrd', overwrite=False):
+def processVolume(dicomVolume, destination, filename=None, fileformat='nrrd', overwrite=False):
   global logger
   try:
     if len(dicomVolume.dicFiles()) == 0:  # No files for this series UID (maybe not image storage?)
       logger.debug('No files for this series...')
+      return
+
+    if dicomVolume.check_4D():
+      logger.warning("Volume is 4D, skipping...")
       return
 
     patient_name = getattr(dicomVolume[0], 'PatientName', '').split('^')[0]
@@ -224,7 +228,7 @@ def processVolume(dicomVolume, destination_folder, filename=None, fileformat='nr
 
     if filename is None:  # Generate a filename from DICOM metadata
       filename = dicomVolume.build_filename()
-    filename = os.path.join(destination_folder, filename)
+    filename = os.path.join(destination, filename)
     filename += '.' + fileformat
 
     if os.path.isfile(filename):
@@ -241,6 +245,7 @@ def processVolume(dicomVolume, destination_folder, filename=None, fileformat='nr
   except:
     logger.error('Oh Oh... something went wrong...', exc_info=True)
 
+
 def checkVolume(dicomVolume, uid):
   try:
     if len(dicomVolume.dicFiles()) == 0:  # No files for this series UID (maybe not image storage?)
@@ -249,7 +254,7 @@ def checkVolume(dicomVolume, uid):
 
     dicomVolume.sortSlices()
     if dicomVolume.is_equidistant and dicomVolume.is_valid:
-    	logger.info('DicomVolume %s is valid...', uid)
+      logger.info('DicomVolume %s is valid...', uid)
   except:
     logger.error('Oh Oh... something went wrong...', exc_info=True)
 
@@ -275,10 +280,10 @@ if __name__ == '__main__':
   parser.add_argument("--format", "-f", nargs="?", default="nrrd", choices=["nrrd", "nii", "nii.gz"],
                       help="Image format to convert to. Default is the 'nrrd' format")
   parser.add_argument('--logging-level', metavar='LEVEL',
-                    choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
-                    default='WARNING', help='Set capture level for logging')
+                      choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
+                      default='WARNING', help='Set capture level for logging')
   parser.add_argument('--log-file', metavar='FILE', type=argparse.FileType('w'), default=None,
-                    help='File to append logger output to')
+                      help='File to append logger output to')
   parser.add_argument('--overwrite', action='store_true', help='if this argument is specified, script will overwrite existing files, '
                                                                'otherwise, file write for already existing files is skipped.')
   parser.add_argument('--check', action='store_true', help='if this argument is specified, DICOMS are checked but not converted.')
