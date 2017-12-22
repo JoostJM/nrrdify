@@ -177,7 +177,7 @@ class DicomVolume:
       return True  # Slices already sorted, no re-sort needed
 
     if self.slices4D is None:
-      logger.warning("DicomVolume needs to be split by temporal position before 4D sorting can occur")
+      self.logger.warning("DicomVolume needs to be split by temporal position before 4D sorting can occur")
       return False
 
     slice_count = None
