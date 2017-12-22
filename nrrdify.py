@@ -267,32 +267,44 @@ def main(source, destination, filename=None, fileformat='nrrd', overwrite=False,
 
               # Load dicom file using PyDicom (needed for name extraction, sorting of series and slices)
               dicfile = dicom.read_file(os.path.join(curdir, fname), stop_before_pixels=True)
+
+              imagetype = getattr(dicfile, 'ImageType', None)
               sop_class = getattr(dicfile, 'SOPClassUID', None)  # Check if it is a dicomfile containing an image
               series_uid = getattr(dicfile, 'SeriesInstanceUID', None)  # Series UID
+              if imagetype is None:
+                logger.debug("missing Image Type tag in dicom file %s", os.path.join(curdir, fname))
+                continue  # Error cannot sort, so skip and go To next file
               if series_uid is None:
                 continue  # Error cannot sort, so skip and go To next file
               if sop_class is None or 'Image Storage' not in str(sop_class):
                 continue  # not image dicom file, so skip and go to next file
 
-              if series_uid not in datasets:
-                datasets[series_uid] = DicomVolume()
+              imagetype = tuple(imagetype)
 
-              datasets[series_uid].addSlice(dicfile)
+              if series_uid not in datasets:
+                datasets[series_uid] = {}
+
+              if imagetype not in datasets[series_uid]:
+                datasets[series_uid][imagetype] = DicomVolume()
+
+              datasets[series_uid][imagetype].addSlice(dicfile)
             except:
               logger.error('DOH!! Something went wrong \n\n%s' % traceback.format_exc())
     if just_check:
       for ds in datasets:
-        checkVolume(datasets[ds], ds)
+        for volume_idx, volume in enumerate(datasets[ds].values()):
+          checkVolume(volume, ds, volume_idx)
     else:
       # Done scanning files, now make some NRRDs out of them!
       logger.info('Input folder scanned, found %d unique DICOM series', len(datasets))
       if len(datasets) > 1:  # If more than 1 series is found, a custom filename is not possible
         filename = None
       for ds in datasets:  # Multiple datasets, so generate name from DICOM
-        processVolume(datasets[ds], destination, filename, fileformat, overwrite)
+        for volume_idx, volume in enumerate(datasets[ds].values()):
+          processVolume(volume, destination, filename, fileformat, overwrite, volume_idx)
 
 
-def processVolume(dicomVolume, destination, filename=None, fileformat='nrrd', overwrite=False):
+def processVolume(dicomVolume, destination, filename=None, fileformat='nrrd', overwrite=False, file_idx=None):
   global logger
   try:
     if len(dicomVolume.slices) == 0:  # No files for this series UID (maybe not image storage?)
@@ -313,6 +325,10 @@ def processVolume(dicomVolume, destination, filename=None, fileformat='nrrd', ov
 
     if filename is None:  # Generate a filename from DICOM metadata
       filename = dicomVolume.build_filename()
+
+    if file_idx is not None and file_idx > 0:
+      filename = '%s (%d)' % (filename, file_idx)
+
     filename = os.path.join(destination, filename)
     filename += '.' + fileformat
 
@@ -331,7 +347,7 @@ def processVolume(dicomVolume, destination, filename=None, fileformat='nrrd', ov
     logger.error('Oh Oh... something went wrong...', exc_info=True)
 
 
-def checkVolume(dicomVolume, uid):
+def checkVolume(dicomVolume, uid, volume_idx=None):
   try:
     if len(dicomVolume.dicFiles()) == 0:  # No files for this series UID (maybe not image storage?)
       logger.debug('No files for this series...')
@@ -339,7 +355,10 @@ def checkVolume(dicomVolume, uid):
 
     dicomVolume.sortSlices()
     if dicomVolume.is_equidistant and dicomVolume.is_valid:
-      logger.info('DicomVolume %s is valid...', uid)
+      if volume_idx is not None:
+        logger.info('DicomVolume %s, (volume %d) is valid...', uid, volume_idx + 1)
+      else:
+        logger.info('DicomVolume %s is valid...', uid)
   except:
     logger.error('Oh Oh... something went wrong...', exc_info=True)
 
