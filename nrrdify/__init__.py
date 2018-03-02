@@ -39,61 +39,66 @@ def walk_folder(source,
                 mkdirs=True,
                 output_writer=None):
   global counter, logger
-  if os.path.isdir(source) and os.path.isdir(destination):
-    counter = 0
-    logger.info('Input and output valid, scanning input folder for DICOM files')
-    datasets = {}  # Holds the dicom files, sorted by series UID ({seriesUID: [files]})
-    for curdir, dirnames, fnames in os.walk(source):
-      if len(fnames) > 0:  # Only process folder if it contains files
-        logger.info('Processing folder %s', curdir)
+  if not os.path.isdir(source):
+    logger.error('Source directory (%s) does not exist! Exiting...', source)
+    return
+  if not os.path.isdir(destination):
+    logger.error('Destination directory (%s) does not exist! Exiting...', destination)
+    return
+  counter = 0
+  logger.info('Input and output valid, scanning input folder for DICOM files')
+  datasets = {}  # Holds the dicom files, sorted by series UID ({seriesUID: [files]})
+  for curdir, dirnames, fnames in os.walk(source):
+    if len(fnames) > 0:  # Only process folder if it contains files
+      logger.info('Processing folder %s', curdir)
 
-        with tqdm.tqdm(fnames, desc='Processing files') as bar:  # Progress reporting
-          for fname in bar:  # for each file in current folder
-            try:
-              # Check if it contains a valid DICOM header (first 4 bytes = DICM)
-              with open(os.path.join(curdir, fname), mode='rb') as openFile:
-                openFile.seek(128)
-                header = openFile.read(4)
-                if header.decode() != 'DICM':
-                  # Not a valid DICOM file, skip to next
-                  continue  # Go to next file
+      with tqdm.tqdm(fnames, desc='Processing files') as bar:  # Progress reporting
+        for fname in bar:  # for each file in current folder
+          try:
+            # Check if it contains a valid DICOM header (first 4 bytes = DICM)
+            with open(os.path.join(curdir, fname), mode='rb') as openFile:
+              openFile.seek(128)
+              header = openFile.read(4)
+              if header.decode() != 'DICM':
+                # Not a valid DICOM file, skip to next
+                continue  # Go to next file
 
-              # Load dicom file using PyDicom (needed for name extraction, sorting of series and slices)
-              dicfile = pydicom.read_file(os.path.join(curdir, fname), stop_before_pixels=True)
+            # Load dicom file using PyDicom (needed for name extraction, sorting of series and slices)
+            dicfile = pydicom.read_file(os.path.join(curdir, fname), stop_before_pixels=True)
 
-              imagetype = getattr(dicfile, 'ImageType', None)
-              sop_class = getattr(dicfile, 'SOPClassUID', None)  # Check if it is a dicomfile containing an image
-              series_uid = getattr(dicfile, 'SeriesInstanceUID', None)  # Series UID
-              if imagetype is None:
-                logger.debug("missing Image Type tag in dicom file %s", os.path.join(curdir, fname))
-                continue  # Error cannot sort, so skip and go To next file
-              if series_uid is None:
-                continue  # Error cannot sort, so skip and go To next file
-              if sop_class is None or 'Image Storage' not in str(sop_class):
-                continue  # not image dicom file, so skip and go to next file
+            imagetype = getattr(dicfile, 'ImageType', None)
+            sop_class = getattr(dicfile, 'SOPClassUID', None)  # Check if it is a dicomfile containing an image
+            series_uid = getattr(dicfile, 'SeriesInstanceUID', None)  # Series UID
+            if imagetype is None:
+              logger.debug("missing Image Type tag in dicom file %s", os.path.join(curdir, fname))
+              continue  # Error cannot sort, so skip and go To next file
+            if series_uid is None:
+              continue  # Error cannot sort, so skip and go To next file
+            if sop_class is None or 'Image Storage' not in str(sop_class):
+              continue  # not image dicom file, so skip and go to next file
 
-              imagetype = tuple(imagetype)
+            imagetype = tuple(imagetype)
 
-              if series_uid not in datasets:
-                datasets[series_uid] = {}
+            if series_uid not in datasets:
+              datasets[series_uid] = {}
 
-              if imagetype not in datasets[series_uid]:
-                datasets[series_uid][imagetype] = dicomvolume.DicomVolume()
+            if imagetype not in datasets[series_uid]:
+              datasets[series_uid][imagetype] = dicomvolume.DicomVolume()
 
-              datasets[series_uid][imagetype].addSlice(dicfile)
-            except:
-              logger.error('DOH!! Something went wrong!', exc_info=True)
-        if process_per_folder:
-          dest = os.path.join(destination, curdir)
-          if not os.path.isdir(dest):
-            logger.debug('Creating output directory "%s"', dest)
-            os.makedirs(dest)
+            datasets[series_uid][imagetype].addSlice(dicfile)
+          except:
+            logger.error('DOH!! Something went wrong!', exc_info=True)
+      if process_per_folder:
+        dest = os.path.join(destination, curdir)
+        if not os.path.isdir(dest):
+          logger.debug('Creating output directory "%s"', dest)
+          os.makedirs(dest)
 
-          _processResults(datasets, dest, filename, fileformat, overwrite, just_check, mkdirs, output_writer)
-          datasets = {}
+        _processResults(datasets, dest, filename, fileformat, overwrite, just_check, mkdirs, output_writer)
+        datasets = {}
 
-    if not process_per_folder:
-      _processResults(datasets, destination, filename, fileformat, overwrite, just_check, mkdirs, output_writer)
+  if not process_per_folder:
+    _processResults(datasets, destination, filename, fileformat, overwrite, just_check, mkdirs, output_writer)
 
 
 def _processResults(datasets, destination, filename, fileformat, overwrite, just_check, mkdirs, output_writer):
