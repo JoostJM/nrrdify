@@ -23,6 +23,10 @@ def main():
                                            "<PatientName>-<StudyDate>-<SeriesNumber>. <SeriesDescription>")
   parser.add_argument("--format", "-f", nargs="?", default="nrrd", choices=["nrrd", "nii", "nii.gz"],
                       help="Image format to convert to. Default is the 'nrrd' format")
+  parser.add_argument('--structure', '-s', choices=['none', 'source', 'dicom'], default='none',
+                      help='directory structure to use in the output. "none" (Default): no structure, just store the files, '
+                           '"source": copy the structure in the input. N.B. processes each folder independently.'
+                           '"dicom": create tree based on dicomtags: "<patient>/<studydate>/<volume>"')
   parser.add_argument('--logging-level', metavar='LEVEL',
                       choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
                       default='WARNING', help='Set capture level for logging')
@@ -49,9 +53,26 @@ def main():
   source_folder = args.inputFolder
   destination_folder = args.out
   if destination_folder is None:
-    destination_folder = os.path.dirname(source_folder)
+    destination_folder = source_folder
 
-  nrrdify.walk_folder(source_folder, destination_folder, args.name, args.format, args.overwrite, just_check=args.check)
+  if args.structure == 'none':
+    mkdirs = False
+    process_per_folder = False
+  elif args.structure == 'source':
+    mkdirs = False
+    process_per_folder = True
+  else:  # dicom:
+    mkdirs = True
+    process_per_folder = False
+
+  nrrdify.walk_folder(source_folder,
+                      destination_folder,
+                      args.name,
+                      args.format,
+                      args.overwrite,
+                      just_check=args.check,
+                      process_per_folder=process_per_folder,
+                      mkdirs=mkdirs)
 
 if __name__ == '__main__':
   main()

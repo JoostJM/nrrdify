@@ -28,7 +28,15 @@ if len(logger.handlers) == 0:
   logger.setLevel(logging.INFO)
 
 
-def walk_folder(source, destination, filename=None, fileformat='nrrd', overwrite=False, just_check=False):
+def walk_folder(source,
+                destination,
+                filename=None,
+                fileformat='nrrd',
+                overwrite=False,
+                just_check=False,
+                process_per_folder=False,
+                mkdirs=True):
+  global logger
   if os.path.isdir(source) and os.path.isdir(destination):
     logger.info('Input and output valid, scanning input folder for DICOM files')
     datasets = {}  # Holds the dicom files, sorted by series UID ({seriesUID: [files]})
@@ -72,6 +80,21 @@ def walk_folder(source, destination, filename=None, fileformat='nrrd', overwrite
               datasets[series_uid][imagetype].addSlice(dicfile)
             except:
               logger.error('DOH!! Something went wrong!', exc_info=True)
+        if process_per_folder:
+          dest = os.path.join(destination, curdir)
+          if not os.path.isdir(dest):
+            logger.debug('Creating output directory "%s"', dest)
+            os.makedirs(dest)
+
+          _processResults(datasets, dest, filename, fileformat, overwrite, just_check, mkdirs)
+          datasets = {}
+
+    if not process_per_folder:
+      _processResults(datasets, destination, filename, fileformat, overwrite, just_check, mkdirs)
+
+
+def _processResults(datasets, destination, filename, fileformat, overwrite, just_check, mkdirs):
+    global logger
     if just_check:
       for ds in datasets:
         for volume_idx, volume in enumerate(datasets[ds].values()):
@@ -83,55 +106,76 @@ def walk_folder(source, destination, filename=None, fileformat='nrrd', overwrite
         filename = None
       for ds in datasets:  # Multiple datasets, so generate name from DICOM
         for volume_idx, volume in enumerate(datasets[ds].values()):
-          processVolume(volume, destination, filename, fileformat, overwrite, volume_idx)
+          processVolume(volume, destination, filename, fileformat, overwrite, volume_idx, mkdirs)
 
 
-def processVolume(dicomVolume, destination, filename=None, fileformat='nrrd', overwrite=False, file_idx=None):
+def processVolume(volume,
+                  destination,
+                  filename=None,
+                  fileformat='nrrd',
+                  overwrite=False,
+                  file_idx=None,
+                  mkdirs=False):
+  global logger
   try:
-    if len(dicomVolume.slices) == 0:  # No files for this series UID (maybe not image storage?)
+    if len(volume.slices) == 0:  # No files for this series UID (maybe not image storage?)
       logger.debug('No files for this series...')
       return
 
-    if dicomVolume.check_4D():
+    if volume.check_4D():
       logger.warning("Volume is 4D, skipping...")
       return
 
-    patient_name = str(getattr(dicomVolume[0], 'PatientName', '')).split('^')[0]
-    study_date = getattr(dicomVolume[0], 'StudyDate', '19000101')
-    series_description = getattr(dicomVolume[0], 'SeriesDescription', 'Unkn')
-    series_number = getattr(dicomVolume[0], 'SeriesNumber', -1)
+    patient_name = str(getattr(volume[0], 'PatientName', '')).split('^')[0]
+    study_date = getattr(volume[0], 'StudyDate', '19000101')
+    series_description = getattr(volume[0], 'SeriesDescription', 'Unkn')
+    series_number = getattr(volume[0], 'SeriesNumber', -1)
 
     logger.info('Generating NRRD for pt %s, studydate %s, series %s:%s' %
                 (patient_name, study_date, series_number, series_description))
 
+    im = volume.getSimpleITKImage()
+    if im is None:
+      return
+
     if filename is None:  # Generate a filename from DICOM metadata
-      filename = dicomVolume.build_filename()
+      filename = volume.build_filename()
 
     if file_idx is not None and file_idx > 0:
       filename = '%s (%d)' % (filename, file_idx)
 
+    if mkdirs:
+      # Remove invalid characters from dir names
+      patient_dir = patient_name
+      study_dir = study_date
+      for c in r'[]/\;,><&*:%=+@!#^()|?^':
+        patient_dir = patient_dir.replace(c, '')
+        study_dir = study_dir.replace(c, '')
+
+      destination = os.path.join(destination, patient_dir, study_dir)
+
     filename = os.path.join(destination, filename)
     filename += '.' + fileformat
 
-    if os.path.isfile(filename):
+    if destination != '' and not os.path.isdir(destination):
+      logger.debug('Creating study directory "%s"', destination)
+      os.makedirs(destination)
+    elif os.path.isfile(filename):
       if overwrite:
         logger.warning('file "%s" already exists, overwriting...', filename)
       else:
         logger.info('file "%s" already exists, skipping...', filename)
         return
 
-    im = dicomVolume.getSimpleITKImage()
-    if im is None:
-      return
-
-    logger.info('Image file series read (%d files), storing in %s', len(dicomVolume.slices), filename)
+    logger.info('Image file series read (%d files), storing in %s', len(volume.slices), filename)
 
     sitk.WriteImage(im, filename)
   except:
     logger.error('Oh Oh... something went wrong...', exc_info=True)
 
 
-def checkVolume(dicomVolume, uid, volume_idx=None):
+def checkVolume(dicomVolume, uid, volume_idx=0):
+  global logger
   try:
     if len(dicomVolume.dicFiles()) == 0:  # No files for this series UID (maybe not image storage?)
       logger.debug('No files for this series...')
@@ -139,7 +183,7 @@ def checkVolume(dicomVolume, uid, volume_idx=None):
 
     dicomVolume.sortSlices()
     if dicomVolume.is_equidistant and dicomVolume.is_valid:
-      if volume_idx is not None:
+      if volume_idx > 0:
         logger.info('DicomVolume %s, (volume %d) is valid...', uid, volume_idx + 1)
       else:
         logger.info('DicomVolume %s is valid...', uid)
