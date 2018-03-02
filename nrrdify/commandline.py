@@ -7,8 +7,8 @@
 # ========================================================================
 
 import argparse
+import csv
 import logging
-import os
 
 import nrrdify
 
@@ -27,6 +27,9 @@ def main():
                       help='directory structure to use in the output. "none" (Default): no structure, just store the files, '
                            '"source": copy the structure in the input. N.B. processes each folder independently.'
                            '"dicom": create tree based on dicomtags: "<patient>/<studydate>/<volume>"')
+  parser.add_argument('--csv-output', '-co', type=argparse.FileType('w'), default=None,
+                      help='Specifies a new CSV-file to store the locations of the generated files, overwrites'
+                           'existing files. If omitted, no CSV output is generated.')
   parser.add_argument('--logging-level', metavar='LEVEL',
                       choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
                       default='WARNING', help='Set capture level for logging')
@@ -65,6 +68,11 @@ def main():
     mkdirs = True
     process_per_folder = False
 
+  writer = None
+  if args.csv_output is not None:
+    writer = csv.writer(args.csv_output)
+    writer.writerow(['ID', 'patient', 'studydate', 'image', 'numSlices'])
+
   nrrdify.walk_folder(source_folder,
                       destination_folder,
                       args.name,
@@ -72,7 +80,8 @@ def main():
                       args.overwrite,
                       just_check=args.check,
                       process_per_folder=process_per_folder,
-                      mkdirs=mkdirs)
+                      mkdirs=mkdirs,
+                      output_writer=writer)
 
 
 if __name__ == '__main__':

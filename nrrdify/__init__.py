@@ -9,13 +9,14 @@
 import logging
 import os
 
-import dicom
+import pydicom
 import SimpleITK as sitk
 import tqdm
 
 from . import dicomvolume
 
 logger = logging.getLogger('nrrdify')
+counter = 0
 
 if len(logger.handlers) == 0:
   print('Adding handler for logger')
@@ -35,9 +36,11 @@ def walk_folder(source,
                 overwrite=False,
                 just_check=False,
                 process_per_folder=False,
-                mkdirs=True):
-  global logger
+                mkdirs=True,
+                output_writer=None):
+  global counter, logger
   if os.path.isdir(source) and os.path.isdir(destination):
+    counter = 0
     logger.info('Input and output valid, scanning input folder for DICOM files')
     datasets = {}  # Holds the dicom files, sorted by series UID ({seriesUID: [files]})
     for curdir, dirnames, fnames in os.walk(source):
@@ -56,7 +59,7 @@ def walk_folder(source,
                   continue  # Go to next file
 
               # Load dicom file using PyDicom (needed for name extraction, sorting of series and slices)
-              dicfile = dicom.read_file(os.path.join(curdir, fname), stop_before_pixels=True)
+              dicfile = pydicom.read_file(os.path.join(curdir, fname), stop_before_pixels=True)
 
               imagetype = getattr(dicfile, 'ImageType', None)
               sop_class = getattr(dicfile, 'SOPClassUID', None)  # Check if it is a dicomfile containing an image
@@ -86,14 +89,14 @@ def walk_folder(source,
             logger.debug('Creating output directory "%s"', dest)
             os.makedirs(dest)
 
-          _processResults(datasets, dest, filename, fileformat, overwrite, just_check, mkdirs)
+          _processResults(datasets, dest, filename, fileformat, overwrite, just_check, mkdirs, output_writer)
           datasets = {}
 
     if not process_per_folder:
-      _processResults(datasets, destination, filename, fileformat, overwrite, just_check, mkdirs)
+      _processResults(datasets, destination, filename, fileformat, overwrite, just_check, mkdirs, output_writer)
 
 
-def _processResults(datasets, destination, filename, fileformat, overwrite, just_check, mkdirs):
+def _processResults(datasets, destination, filename, fileformat, overwrite, just_check, mkdirs, output_writer):
     global logger
     if just_check:
       for ds in datasets:
@@ -106,7 +109,7 @@ def _processResults(datasets, destination, filename, fileformat, overwrite, just
         filename = None
       for ds in datasets:  # Multiple datasets, so generate name from DICOM
         for volume_idx, volume in enumerate(datasets[ds].values()):
-          processVolume(volume, destination, filename, fileformat, overwrite, volume_idx, mkdirs)
+          processVolume(volume, destination, filename, fileformat, overwrite, volume_idx, mkdirs, output_writer)
 
 
 def processVolume(volume,
@@ -115,15 +118,12 @@ def processVolume(volume,
                   fileformat='nrrd',
                   overwrite=False,
                   file_idx=None,
-                  mkdirs=False):
-  global logger
+                  mkdirs=False,
+                  output_writer=None):
+  global counter, logger
   try:
     if len(volume.slices) == 0:  # No files for this series UID (maybe not image storage?)
       logger.debug('No files for this series...')
-      return
-
-    if volume.check_4D():
-      logger.warning("Volume is 4D, skipping...")
       return
 
     patient_name = str(getattr(volume[0], 'PatientName', '')).split('^')[0]
@@ -131,12 +131,17 @@ def processVolume(volume,
     series_description = getattr(volume[0], 'SeriesDescription', 'Unkn')
     series_number = getattr(volume[0], 'SeriesNumber', -1)
 
-    logger.info('Generating NRRD for pt %s, studydate %s, series %s:%s' %
-                (patient_name, study_date, series_number, series_description))
+    if volume.check_4D():
+      logger.warning("Volume is 4D (patient %s, studydate %s series %d. %s), skipping...",
+                     patient_name, study_date, series_number, series_description)
+      return
 
     im = volume.getSimpleITKImage()
     if im is None:
       return
+
+    logger.info('Generating NRRD for pt %s, studydate %s, series %s:%s' %
+                (patient_name, study_date, series_number, series_description))
 
     if filename is None:  # Generate a filename from DICOM metadata
       filename = volume.build_filename()
@@ -170,6 +175,11 @@ def processVolume(volume,
     logger.info('Image file series read (%d files), storing in %s', len(volume.slices), filename)
 
     sitk.WriteImage(im, filename)
+
+    counter += 1
+
+    if output_writer is not None:
+      output_writer.writerow([counter, patient_name, study_date, filename, len(volume.slices)])
   except:
     logger.error('Oh Oh... something went wrong...', exc_info=True)
 

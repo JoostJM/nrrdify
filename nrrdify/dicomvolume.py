@@ -36,27 +36,43 @@ class DicomVolume:
     self.is_sorted4D = False
 
   def _check_valid(self):
-    required_tags = ['ImagePositionPatient']
+    patientName = getattr(self.slices[0], 'PatientName', None)
+    studyDate = getattr(self.slices[0], 'StudyDate', None)
+
+    series_description = getattr(self.slices[0], 'SeriesDescription', 'Unkn')
+    series_number = getattr(self.slices[0], 'SeriesNumber', -1)
+
+    if patientName is None or studyDate is None:
+      self.logger.error('Missing patient name in file %s', self.slices[0].filename)
+      return False
+    if studyDate is None:
+      self.logger.error('Missing study date in file %s', self.slices[0].filename)
+      return False
+
+    required_tags = ['ImagePositionPatient', 'PatientName', 'StudyDate']  # Check pt name and study date in other slices
     identical_tags = ['ImageOrientationPatient']
 
     for tag in required_tags:
       for dfile in self.slices:
         if getattr(dfile, tag, None) is None:
-          self.logger.error('No value found for tag %s in file %s, invalid series!', tag, dfile.filename)
+          self.logger.error('No value found for tag %s in file %s (patient %s, studydate %s, series %d. %s), invalid series!',
+                            tag, dfile.filename, patientName, studyDate, series_number, series_description)
           return False
     for tag in identical_tags:
       val = getattr(self.slices[0], tag, None)
       if val is None:
-        self.logger.error('No value found for tag %s in file %s, invalid series!', tag, self.slices[0].filename)
+        self.logger.error('No value found for tag %s in file %s (patient %s, studydate %s, series %d. %s), invalid series!',
+                          tag, self.slices[0].filename, patientName, studyDate, series_number, series_description)
         return False
       for dfile in self.slices[1:]:
         val2 = getattr(dfile, tag, None)
         if val2 is None:
-          self.logger.error('No value found for tag %s in file %s, invalid series!', tag, dfile.filename)
+          self.logger.error('No value found for tag %s in file %s (patient %s, studydate %s, series %d. %s), invalid series!',
+                            tag, dfile.filename, patientName, studyDate, series_number, series_description)
           return False
         if not np.allclose(val, val2, rtol=1e-2):
-          self.logger.error('Non-matching values found for tag %s between files %s and %s',
-                            tag, self.slices[0].filename, dfile.filename)
+          self.logger.error('Non-matching values found for tag %s between files %s and %s (patient %s, studydate %s, series %d. %s)',
+                            tag, self.slices[0].filename, dfile.filename, patientName, studyDate, series_number, series_description)
           return False
     return True
 
