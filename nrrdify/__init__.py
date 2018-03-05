@@ -184,6 +184,7 @@ def processVolume(volume,
     counter += 1
 
     if output_writer is not None:
+      logger.debug('Storing location in CSV output')
       output_writer.writerow([counter, patient_name, study_date, filename, len(volume.slices)])
   except:
     logger.error('Oh Oh... something went wrong...', exc_info=True)

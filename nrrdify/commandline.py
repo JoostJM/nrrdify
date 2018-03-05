@@ -14,7 +14,7 @@ import nrrdify
 
 
 def main():
-  parser = argparse.ArgumentParser()
+  parser = argparse.ArgumentParser(fromfile_prefix_chars='@')
   parser.add_argument("inputFolder", metavar="In", type=str, help="Folder containing the DICOM file(s) to convert.")
   parser.add_argument("--out", "-o", help="Folder to store converted files in. If omitted, stores "
                                           "files in parent directory of In folder.")
@@ -70,7 +70,7 @@ def main():
 
   writer = None
   if args.csv_output is not None:
-    writer = csv.writer(args.csv_output)
+    writer = csv.writer(args.csv_output, lineterminator='\n')
     writer.writerow(['ID', 'patient', 'studydate', 'image', 'numSlices'])
 
   nrrdify.walk_folder(source_folder,
