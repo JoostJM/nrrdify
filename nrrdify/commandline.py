@@ -56,6 +56,7 @@ def main(args=None):
   source_folder = args.inputFolder
   destination_folder = args.out
   if destination_folder is None:
+    nrrdify.logger.info('No destination specified, using source folder %s', source_folder)
     destination_folder = source_folder
 
   if args.structure == 'none':

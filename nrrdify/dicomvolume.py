@@ -181,6 +181,8 @@ class DicomVolume:
       if not str(temporal_position).isdigit():  # not a valid B value
         try:
           temporal_position = struct.unpack('d', temporal_position)[0]
+        except KeyboardInterrupt:
+          raise
         except Exception:
           self.logger.error('Error unpacking value for tag %s in file %s', splitTag, s.filename)
           return False

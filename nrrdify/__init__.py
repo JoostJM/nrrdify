@@ -47,7 +47,7 @@ def walk_folder(source,
     logger.error('Destination directory (%s) does not exist! Exiting...', destination)
     return
   counter = 0
-  logger.info('Input and output valid, scanning input folder for DICOM files')
+  logger.info('Input (%s) and output (%s) valid, scanning input folder for DICOM files', source, destination)
   datasets = {}  # Holds the dicom files, sorted by series UID ({seriesUID: [files]})
   for curdir, dirnames, fnames in os.walk(source):
     if len(fnames) > 0:  # Only process folder if it contains files
@@ -87,10 +87,12 @@ def walk_folder(source,
               datasets[series_uid][imagetype] = dicomvolume.DicomVolume(post_processing)
 
             datasets[series_uid][imagetype].addSlice(dicfile)
+          except KeyboardInterrupt:
+            return
           except:
             logger.error('DOH!! Something went wrong!', exc_info=True)
       if process_per_folder:
-        dest = os.path.join(destination, curdir)
+        dest = os.path.join(destination, os.path.relpath(curdir, source))
         if not os.path.isdir(dest):
           logger.debug('Creating output directory "%s"', dest)
           os.makedirs(dest)
@@ -186,7 +188,9 @@ def processVolume(volume,
 
     if output_writer is not None:
       logger.debug('Storing location in CSV output')
-      output_writer.writerow([counter, patient_name, study_date, filename, len(volume.slices)])
+      output_writer.writerow([counter, patient_name, study_date, filename.replace(os.path.sep, '/'), len(volume.slices)])
+  except KeyboardInterrupt:
+    raise
   except:
     logger.error('Oh Oh... something went wrong...', exc_info=True)
 
@@ -194,7 +198,7 @@ def processVolume(volume,
 def checkVolume(dicomVolume, uid, volume_idx=0):
   global logger
   try:
-    if len(dicomVolume.dicFiles()) == 0:  # No files for this series UID (maybe not image storage?)
+    if len(dicomVolume.slices) == 0:  # No files for this series UID (maybe not image storage?)
       logger.debug('No files for this series...')
       return
 
@@ -204,5 +208,7 @@ def checkVolume(dicomVolume, uid, volume_idx=0):
         logger.info('DicomVolume %s, (volume %d) is valid...', uid, volume_idx + 1)
       else:
         logger.info('DicomVolume %s is valid...', uid)
+  except KeyboardInterrupt:
+    raise
   except:
     logger.error('Oh Oh... something went wrong...', exc_info=True)
