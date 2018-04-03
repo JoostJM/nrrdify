@@ -15,7 +15,7 @@ import SimpleITK as sitk
 
 class DicomVolume:
 
-  def __init__(self):
+  def __init__(self, post_processing=None):
     self.slices = []
     self.slices4D = None
     self.logger = logging.getLogger('nrrdify.DicomVolume')
@@ -26,6 +26,8 @@ class DicomVolume:
 
     self.is_4D = False
     self.is_sorted4D = False
+
+    self.post_processing = post_processing
 
   def __getitem__(self, item):
     return self.slices[item]
@@ -96,6 +98,10 @@ class DicomVolume:
       reader.SetFileNames([f.filename for f in slices])
       self.logger.debug('Getting the image (%d files)...', len(slices))
       im = reader.Execute()
+
+    if self.post_processing is not None:
+      im = self.post_processing(im, slices)
+
     return im
 
   def build_filename(self):

@@ -17,6 +17,7 @@ from . import dicomvolume
 
 logger = logging.getLogger('nrrdify')
 counter = 0
+post_processing = None
 
 if len(logger.handlers) == 0:
   print('Adding handler for logger')
@@ -38,7 +39,7 @@ def walk_folder(source,
                 process_per_folder=False,
                 mkdirs=True,
                 output_writer=None):
-  global counter, logger
+  global counter, logger, post_processing
   if not os.path.isdir(source):
     logger.error('Source directory (%s) does not exist! Exiting...', source)
     return
@@ -83,7 +84,7 @@ def walk_folder(source,
               datasets[series_uid] = {}
 
             if imagetype not in datasets[series_uid]:
-              datasets[series_uid][imagetype] = dicomvolume.DicomVolume()
+              datasets[series_uid][imagetype] = dicomvolume.DicomVolume(post_processing)
 
             datasets[series_uid][imagetype].addSlice(dicfile)
           except:

@@ -13,7 +13,7 @@ import logging
 import nrrdify
 
 
-def main():
+def main(args=None):
   parser = argparse.ArgumentParser(fromfile_prefix_chars='@')
   parser.add_argument("inputFolder", metavar="In", type=str, help="Folder containing the DICOM file(s) to convert.")
   parser.add_argument("--out", "-o", help="Folder to store converted files in. If omitted, stores "
@@ -39,7 +39,7 @@ def main():
                                                                'otherwise, file write for already existing files is skipped.')
   parser.add_argument('--check', action='store_true', help='if this argument is specified, DICOMS are checked but not converted.')
 
-  args = parser.parse_args()
+  args = parser.parse_args(args)
 
   # if specified, set up logging to a file
   if args.log_file is not None:
