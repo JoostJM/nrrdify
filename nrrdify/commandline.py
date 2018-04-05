@@ -72,7 +72,7 @@ def main(args=None):
   writer = None
   if args.csv_output is not None:
     writer = csv.writer(args.csv_output, lineterminator='\n')
-    writer.writerow(['ID', 'patient', 'studydate', 'image', 'numSlices'])
+    writer.writerow(['idx', 'patient', 'studydate', 'image', 'numSlices'])
 
   nrrdify.walk_folder(source_folder,
                       destination_folder,
