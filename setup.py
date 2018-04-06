@@ -43,7 +43,7 @@ setup(
     'Topic :: Utilities'
   ],
 
-  requires=requirements,
+  install_requires=requirements,
 
   keywords='cancerimaging medicalresearch computationalimaging'
 )

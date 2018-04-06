@@ -1,4 +1,4 @@
 numpy
 SimpleITK
-PyDicom
+PyDicom>=1.0.2
 tqdm
