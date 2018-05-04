@@ -38,7 +38,8 @@ def walk_folder(source,
                 just_check=False,
                 process_per_folder=False,
                 mkdirs=True,
-                output_writer=None):
+                output_writer=None,
+                dump_protocol=False):
   global counter, logger, post_processing
   if not os.path.isdir(source):
     logger.error('Source directory (%s) does not exist! Exiting...', source)
@@ -97,14 +98,14 @@ def walk_folder(source,
           logger.debug('Creating output directory "%s"', dest)
           os.makedirs(dest)
 
-        _processResults(datasets, dest, filename, fileformat, overwrite, just_check, mkdirs, output_writer)
+        _processResults(datasets, dest, filename, fileformat, overwrite, just_check, mkdirs, output_writer, dump_protocol)
         datasets = {}
 
   if not process_per_folder:
-    _processResults(datasets, destination, filename, fileformat, overwrite, just_check, mkdirs, output_writer)
+    _processResults(datasets, destination, filename, fileformat, overwrite, just_check, mkdirs, output_writer, dump_protocol)
 
 
-def _processResults(datasets, destination, filename, fileformat, overwrite, just_check, mkdirs, output_writer):
+def _processResults(datasets, destination, filename, fileformat, overwrite, just_check, mkdirs, output_writer, dump_protocol):
     global logger
     if just_check:
       for ds in datasets:
@@ -117,7 +118,7 @@ def _processResults(datasets, destination, filename, fileformat, overwrite, just
         filename = None
       for ds in datasets:  # Multiple datasets, so generate name from DICOM
         for volume_idx, volume in enumerate(datasets[ds].values()):
-          processVolume(volume, destination, filename, fileformat, overwrite, volume_idx, mkdirs, output_writer)
+          processVolume(volume, destination, filename, fileformat, overwrite, volume_idx, mkdirs, output_writer, dump_protocol)
 
 
 def processVolume(volume,
@@ -127,7 +128,8 @@ def processVolume(volume,
                   overwrite=False,
                   file_idx=None,
                   mkdirs=False,
-                  output_writer=None):
+                  output_writer=None,
+                  dump_protocol=False):
   global counter, logger
   try:
     if len(volume.slices) == 0:  # No files for this series UID (maybe not image storage?)
@@ -168,22 +170,24 @@ def processVolume(volume,
       destination = os.path.join(destination, patient_dir, study_dir)
 
     filename = os.path.join(destination, filename)
-    filename += '.' + fileformat
+    nrrd_fname = filename + '.' + fileformat
 
     if destination != '' and not os.path.isdir(destination):
       logger.debug('Creating study directory "%s"', destination)
       os.makedirs(destination)
-    elif os.path.isfile(filename):
+    elif os.path.isfile(nrrd_fname):
       if overwrite:
-        logger.warning('file "%s" already exists, overwriting...', filename)
+        logger.warning('file "%s" already exists, overwriting...', nrrd_fname)
       else:
-        logger.info('file "%s" already exists, skipping...', filename)
+        logger.info('file "%s" already exists, skipping...', nrrd_fname)
         return
 
-    logger.info('Image file series read (%d files), storing in %s', len(volume.slices), filename)
+    protocol_fname = filename + '_protocol.txt'
 
-    sitk.WriteImage(im, filename)
+    logger.info('Image file series read (%d files), storing in %s', len(volume.slices), nrrd_fname)
 
+    sitk.WriteImage(im, nrrd_fname)
+    volume.writeProtocol(protocol_fname)
     counter += 1
 
     if output_writer is not None:

@@ -242,3 +242,22 @@ class DicomVolume:
       ims[t] = self._getImage(self.slices4D[t])
 
     return ims
+
+  def writeProtocol(self, proctocol_fname):
+    if not self.is_sorted:
+      self.sortSlices()
+
+    divider = """
+    \n
+    \n
+    -----------------------------------------------------------------------------
+    \n
+    \n
+    """
+
+    with open(proctocol_fname, mode='w') as protocol_fs:
+
+      for dicfile in self.slices:
+        if 0x00280013 in dicfile:
+          del dicfile[0x00280013]
+        protocol_fs.write(str(dicfile) + divider)

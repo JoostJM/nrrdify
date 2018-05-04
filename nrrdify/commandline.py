@@ -30,6 +30,8 @@ def main(args=None):
   parser.add_argument('--csv-output', '-co', type=argparse.FileType('w'), default=None,
                       help='Specifies a new CSV-file to store the locations of the generated files, overwrites'
                            'existing files. If omitted, no CSV output is generated.')
+  parser.add_argument('--dump-protocol', '-dp', action='store_true', help='If specified, nrrdify will dump the DICOM metadata as a'
+                                                                          'text file for each successfully converted volume')
   parser.add_argument('--logging-level', metavar='LEVEL',
                       choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
                       default='WARNING', help='Set capture level for logging')
@@ -82,7 +84,8 @@ def main(args=None):
                       just_check=args.check,
                       process_per_folder=process_per_folder,
                       mkdirs=mkdirs,
-                      output_writer=writer)
+                      output_writer=writer,
+                      dump_protocol=args.dump_protocol)
 
 
 if __name__ == '__main__':
