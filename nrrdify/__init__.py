@@ -71,15 +71,25 @@ def walk_folder(source,
             imagetype = getattr(dicfile, 'ImageType', None)
             sop_class = getattr(dicfile, 'SOPClassUID', None)  # Check if it is a dicomfile containing an image
             series_uid = getattr(dicfile, 'SeriesInstanceUID', None)  # Series UID
-            if imagetype is None:
-              logger.debug("missing Image Type tag in dicom file %s", os.path.join(curdir, fname))
-              continue  # Error cannot sort, so skip and go To next file
+            modality = getattr(dicfile, 'Modality', '')
+
             if series_uid is None:
               continue  # Error cannot sort, so skip and go To next file
-            if sop_class is None or 'Image Storage' not in str(sop_class):
+            if sop_class is None:
               continue  # not image dicom file, so skip and go to next file
 
-            imagetype = tuple(imagetype)
+            if modality == 'RTDOSE':
+              logger.debug('Dicom file %s is RT dose storage', os.path.join(curdir, fname))
+            elif 'Image Storage' not in str(sop_class):  # Not RT Dose, is the sopclass valid?
+                continue
+            elif imagetype is None:  # Sop class is valid, does it contain image type?
+                logger.debug("missing Image Type tag in dicom file %s", os.path.join(curdir, fname))
+                continue  # Error cannot sort, so skip and go To next file
+
+            if imagetype is None:
+              imagetype = 'RTDOSE'
+            else:
+              imagetype = tuple(imagetype)
 
             if series_uid not in datasets:
               datasets[series_uid] = {}
