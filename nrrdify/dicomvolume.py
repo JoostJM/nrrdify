@@ -8,6 +8,7 @@
 
 import logging
 import struct
+import re
 
 import numpy as np
 import SimpleITK as sitk
@@ -178,9 +179,14 @@ class DicomVolume:
         self.logger.error('Split Tag %s not valid, missing value in file %s', splitTag, s.filename)
         return False
 
-      if not str(temporal_position).isdigit():  # not a valid B value
+      if isinstance(temporal_position, float):
+        if temporal_position.is_integer():
+          temporal_position = int(temporal_position)
+      elif not isinstance(temporal_position, int):
         try:
-          temporal_position = struct.unpack('d', temporal_position)[0]
+          temporal_position = float(struct.unpack('d', temporal_position)[0])
+          if temporal_position.is_integer():
+            temporal_position = int(temporal_position)
         except KeyboardInterrupt:
           raise
         except Exception:
@@ -236,12 +242,9 @@ class DicomVolume:
       if not self.sortSlices4D():
         return
 
-    ims = {}
     for t in self.slices4D:
       self.logger.debug('Processing temporal position %d', t)
-      ims[t] = self._getImage(self.slices4D[t])
-
-    return ims
+      yield t, self._getImage(self.slices4D[t]), len(self.slices4D[t])
 
   def writeProtocol(self, proctocol_fname):
     if not self.is_sorted:

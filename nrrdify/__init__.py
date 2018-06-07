@@ -151,18 +151,6 @@ def processVolume(volume,
     series_description = getattr(volume[0], 'SeriesDescription', 'Unkn')
     series_number = getattr(volume[0], 'SeriesNumber', -1)
 
-    if volume.check_4D():
-      logger.warning("Volume is 4D (patient %s, studydate %s series %d. %s), skipping...",
-                     patient_name, study_date, series_number, series_description)
-      return
-
-    im = volume.getSimpleITKImage()
-    if im is None:
-      return
-
-    logger.info('Generating NRRD for pt %s, studydate %s, series %s:%s' %
-                (patient_name, study_date, series_number, series_description))
-
     if filename is None:  # Generate a filename from DICOM metadata
       filename = volume.build_filename()
 
@@ -179,34 +167,66 @@ def processVolume(volume,
 
       destination = os.path.join(destination, patient_dir, study_dir)
 
-    filename = os.path.join(destination, filename)
-    nrrd_fname = filename + '.' + fileformat
+    if volume.check_4D():
+      if getattr(volume.slices[0], 'DiffusionBValue', None) is not None:
+        # Volume is DWI
+        logger.info('Processing DWI volume, splitting on standard bvalue tag')
+        for b_val, b_im, sliceCount in volume.getSimpleITK4DImage(max_value=2000):
+          if b_im is None:
+            continue
 
-    if destination != '' and not os.path.isdir(destination):
-      logger.debug('Creating study directory "%s"', destination)
-      os.makedirs(destination)
-    elif os.path.isfile(nrrd_fname):
-      if overwrite:
-        logger.warning('file "%s" already exists, overwriting...', nrrd_fname)
+          logger.info('Generating NRRD for pt %s, studydate %s, series %s:%s, bvalue %s (%i slices)',
+                      patient_name, study_date, series_number, series_description, b_val, sliceCount)
+
+          b_fname = filename + '_b' + str(b_val)
+          _store_image(b_im, destination, b_fname, fileformat, patient_name, study_date, sliceCount, overwrite, output_writer)
       else:
-        logger.info('file "%s" already exists, skipping...', nrrd_fname)
+        logger.warning("Volume is 4D, but not DWI (patient %s, studydate %s series %d. %s), skipping...",
+                       patient_name, study_date, series_number, series_description)
+        return
+    else:
+      im = volume.getSimpleITKImage()
+      if im is None:
         return
 
-    protocol_fname = filename + '_protocol.txt'
+      logger.info('Generating NRRD for pt %s, studydate %s, series %s:%s (%i slices)',
+                  patient_name, study_date, series_number, series_description, len(volume.slices))
 
-    logger.info('Image file series read (%d files), storing in %s', len(volume.slices), nrrd_fname)
+      _store_image(im, destination, filename, fileformat, patient_name, study_date, len(volume.slices), overwrite, output_writer)
 
-    sitk.WriteImage(im, nrrd_fname)
-    volume.writeProtocol(protocol_fname)
+    if dump_protocol:
+      protocol_fname = os.path.join(destination, filename) + '_protocol.txt'
+      volume.writeProtocol(protocol_fname)
     counter += 1
 
-    if output_writer is not None:
-      logger.debug('Storing location in CSV output')
-      output_writer.writerow([counter, patient_name, study_date, filename.replace(os.path.sep, '/'), len(volume.slices)])
   except KeyboardInterrupt:
     raise
   except:
     logger.error('Oh Oh... something went wrong...', exc_info=True)
+
+
+def _store_image(im, destination, fname, fileformat, patient, studydate, slicecount, overwrite=False, output_writer=None):
+  global logger
+  target = os.path.join(destination, fname)
+
+  nrrd_fname = target + '.' + fileformat
+
+  if destination != '' and not os.path.isdir(destination):
+    logger.debug('Creating study directory "%s"', destination)
+    os.makedirs(destination)
+  elif os.path.isfile(fname):
+    if overwrite:
+      logger.warning('file "%s" already exists, overwriting...', fname)
+    else:
+      logger.warning('file "%s" already exists, skipping...', fname)
+      return
+
+  logger.info('Storing in %s', nrrd_fname)
+  sitk.WriteImage(im, nrrd_fname)
+
+  if output_writer is not None:
+    logger.debug('Storing location in CSV output')
+    output_writer.writerow([counter, patient, studydate, target.replace(os.path.sep, '/'), slicecount])
 
 
 def checkVolume(dicomVolume, uid, volume_idx=0):
