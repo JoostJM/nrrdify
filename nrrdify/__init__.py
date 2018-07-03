@@ -80,7 +80,7 @@ def walk_folder(source,
 
             if modality == 'RTDOSE':
               logger.debug('Dicom file %s is RT dose storage', os.path.join(curdir, fname))
-            elif 'Image Storage' not in str(sop_class):  # Not RT Dose, is the sopclass valid?
+            elif 'Image Storage' not in sop_class.name:  # Not RT Dose, is the sopclass valid?
                 continue
             elif imagetype is None:  # Sop class is valid, does it contain image type?
                 logger.debug("missing Image Type tag in dicom file %s", os.path.join(curdir, fname))
