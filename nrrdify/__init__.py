@@ -226,7 +226,7 @@ def _store_image(im, destination, fname, fileformat, patient, studydate, sliceco
 
   if output_writer is not None:
     logger.debug('Storing location in CSV output')
-    output_writer.writerow([counter, patient, studydate, target.replace(os.path.sep, '/'), slicecount])
+    output_writer.writerow([counter, patient, studydate, nrrd_fname.replace(os.path.sep, '/'), slicecount])
 
 
 def checkVolume(dicomVolume, uid, volume_idx=0):
