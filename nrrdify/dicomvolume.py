@@ -27,6 +27,7 @@ class DicomVolume:
 
     self.is_4D = False
     self.is_sorted4D = False
+    self.split_tag = None
 
     self.post_processing = post_processing
 
@@ -79,14 +80,14 @@ class DicomVolume:
           return False
     return True
 
-  def _get_slice_locations(self):
+  def _get_slice_locations(self, slices):
     self.logger.debug('Calculation slice positions...')
-    image_orientation = self.slices[0].ImageOrientationPatient
+    image_orientation = slices[0].ImageOrientationPatient
     xvector = image_orientation[:3]
     yvector = image_orientation[3:]
     zvector = np.cross(xvector, yvector)  # This function assumes that the Z axis of the image stack is orthogonal to the Y and X axis
 
-    locations = [np.dot(dfile.ImagePositionPatient, zvector) for dfile in self.slices]  # Z locations in mm of each slice
+    locations = [np.dot(dfile.ImagePositionPatient, zvector) for dfile in slices]  # Z locations in mm of each slice
     return locations
 
   def _getImage(self, slices):
@@ -132,7 +133,7 @@ class DicomVolume:
       self.is_valid = False
       return
 
-    locations = self._get_slice_locations()
+    locations = self._get_slice_locations(self.slices)
 
     # Check if all slices are equidistant
     delta_slices = np.diff(np.array(sorted(locations)))
@@ -173,6 +174,7 @@ class DicomVolume:
 
   def split4D(self, splitTag='DiffusionBValue', max_value=None):
     self.slices4D = {}
+    self.split_tag = splitTag
     for s in self.slices:
       temporal_position = getattr(s, splitTag, None)
       if temporal_position is None:
@@ -215,12 +217,18 @@ class DicomVolume:
       if slice_count is None:
         slice_count = len(self.slices4D[t])
       elif len(self.slices4D[t]) != slice_count:
-        self.logger.error('Different number of slices between temporal positions!')
+        self.logger.warning('Different number of slices between temporal positions! Split tag "%s" not valid')
         return False
 
-      locations = self._get_slice_locations()
+      locations = self._get_slice_locations(self.slices4D[t])
+
+      delta_slices = np.diff(np.array(sorted(locations)))
+      if np.any(delta_slices < 0.03):
+        self.logger.warning('Found overlapping slicer in timepoint %s! Split tag "%s" not valid.', t, self.split_tag)
+        return False
       self.slices4D[t] = [f for (d, f) in sorted(zip(locations, self.slices4D[t]), key=lambda s: s[0])]
 
+    self.is_sorted4D = True
     return True
 
   def getSimpleITK4DImage(self, splitTag='DiffusionBValue', max_value=None):

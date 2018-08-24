@@ -170,8 +170,10 @@ def processVolume(volume,
     if volume.check_4D():
       if getattr(volume.slices[0], 'DiffusionBValue', None) is not None:
         # Volume is DWI
-        logger.info('Processing DWI volume, splitting on standard bvalue tag')
+        logger.info('Volum is 4D, attempting DWI splitting on standard bvalue tag')
+        b_count = 0
         for b_val, b_im, sliceCount in volume.getSimpleITK4DImage(max_value=2000):
+          b_count += 1
           if b_im is None:
             continue
 
@@ -180,6 +182,10 @@ def processVolume(volume,
 
           b_fname = filename + '_b' + str(b_val)
           _store_image(b_im, destination, b_fname, fileformat, patient_name, study_date, sliceCount, overwrite, output_writer)
+        if b_count == 0:
+          logger.warning('4D volume contains bvalue tag, but unable to perform correct split.')
+        else:
+          logger.debug('DWI volume processing complete, found %i b values', b_count)
       else:
         logger.warning("Volume is 4D, but not DWI (patient %s, studydate %s series %d. %s), skipping...",
                        patient_name, study_date, series_number, series_description)
