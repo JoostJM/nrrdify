@@ -8,10 +8,10 @@
 
 import logging
 import struct
-import re
 
 import numpy as np
 import SimpleITK as sitk
+import six
 
 
 class DicomVolume:
@@ -113,10 +113,15 @@ class DicomVolume:
     series_number = getattr(self.slices[0], 'SeriesNumber', -1)
 
     filename = '%s-%s-%s. %s' % (patient_name, study_date, series_number, series_description)
+    filename = self.get_safe_filename(filename)
+
+    return filename
+
+  @staticmethod
+  def get_safe_filename(filename):
     # Remove invalid characters from filename
     for c in r'[]/\;,><&*:%=+@!#^()|?^':
       filename = filename.replace(c, '')
-
     return filename
 
   def sortSlices(self):
@@ -181,9 +186,12 @@ class DicomVolume:
         self.logger.error('Split Tag %s not valid, missing value in file %s', splitTag, s.filename)
         return False
 
+      is_string_temporal = False
       if isinstance(temporal_position, float):
         if temporal_position.is_integer():
           temporal_position = int(temporal_position)
+      elif isinstance(temporal_position, six.string_types):
+        is_string_temporal = True
       elif not isinstance(temporal_position, int):
         try:
           temporal_position = float(struct.unpack('d', temporal_position)[0])
@@ -195,7 +203,7 @@ class DicomVolume:
           self.logger.error('Error unpacking value for tag %s in file %s', splitTag, s.filename)
           return False
 
-      if max_value is not None and temporal_position > max_value:
+      if not is_string_temporal and max_value is not None and temporal_position > max_value:
         self.logger.warning('File %s excluded (temporal position (%d) exceeded max value %d)', s.filename, temporal_position, max_value)
 
       if temporal_position not in self.slices4D:

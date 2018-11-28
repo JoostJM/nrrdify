@@ -8,6 +8,7 @@
 
 import logging
 import os
+import re
 
 import pydicom
 import SimpleITK as sitk
@@ -171,9 +172,9 @@ def processVolume(volume,
       destination = os.path.join(destination, patient_dir, study_dir)
 
     if volume.check_4D():
-      if getattr(volume.slices[0], 'DiffusionBValue', None) is not None:
+      if hasattr(volume.slices[0], 'DiffusionBValue'):
         # Volume is DWI
-        logger.info('Volum is 4D, attempting DWI splitting on standard bvalue tag')
+        logger.debug('Volume is 4D, attempting DWI splitting on standard bvalue tag')
         b_count = 0
         for b_val, b_im, sliceCount in volume.getSimpleITK4DImage(max_value=2000):
           b_count += 1
@@ -189,8 +190,25 @@ def processVolume(volume,
           logger.warning('4D volume contains bvalue tag, but unable to perform correct split.')
         else:
           logger.debug('DWI volume processing complete, found %i b values', b_count)
+      elif re.match('\*ep_b\d{1,4}', getattr(volume.slices[0], 'SequenceName', '')):
+        # Volume is DWI
+        logger.debug('Volume is 4D, attempting splitting on sequence name tag')
+        t_count = 0
+        for t_val, t_im, sliceCount in volume.getSimpleITK4DImage(splitTag='SequenceName'):
+          t_count += 1
+          if t_im is None:
+            continue
+          logger.info('Generating NRRD for pt %s, studydate %s, series %s:%s, temporal value %s (%i slices)',
+                      patient_name, study_date, series_number, series_description, t_val, sliceCount)
+
+          t_fname = filename + '_' + dicomvolume.DicomVolume.get_safe_filename(t_val)
+          _store_image(t_im, destination, t_fname, fileformat, patient_name, study_date, sliceCount, overwrite, output_writer)
+        if t_count == 0:
+          logger.warning('4D volume contains Sequence Name tag, but unable to perform correct split.')
+        else:
+          logger.debug('4D volume processing complete, found %i temporal positions', t_count)
       else:
-        logger.warning("Volume is 4D, but not DWI (patient %s, studydate %s series %d. %s), skipping...",
+        logger.warning("Volume is 4D, but could not split (patient %s, studydate %s series %d. %s), skipping...",
                        patient_name, study_date, series_number, series_description)
         return
     else:
