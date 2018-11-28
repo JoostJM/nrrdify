@@ -37,7 +37,7 @@ def walk_folder(source,
                 overwrite=False,
                 just_check=False,
                 process_per_folder=False,
-                mkdirs=True,
+                structure=None,
                 output_writer=None,
                 dump_protocol=False):
   global counter, logger, post_processing
@@ -103,16 +103,19 @@ def walk_folder(source,
           except:
             logger.error('DOH!! Something went wrong!', exc_info=True)
       if process_per_folder:
-        dest = os.path.join(destination, os.path.relpath(curdir, source))
-        if not os.path.isdir(dest):
-          logger.debug('Creating output directory "%s"', dest)
-          os.makedirs(dest)
+        if structure == 'source':
+          dest = os.path.join(destination, os.path.relpath(curdir, source))
+          if not os.path.isdir(dest):
+            logger.debug('Creating output directory "%s"', dest)
+            os.makedirs(dest)
+        else:
+          dest = destination
 
-        _processResults(datasets, dest, filename, fileformat, overwrite, just_check, mkdirs, output_writer, dump_protocol)
+        _processResults(datasets, dest, filename, fileformat, overwrite, just_check, structure == 'dicom', output_writer, dump_protocol)
         datasets = {}
 
   if not process_per_folder:
-    _processResults(datasets, destination, filename, fileformat, overwrite, just_check, mkdirs, output_writer, dump_protocol)
+    _processResults(datasets, destination, filename, fileformat, overwrite, just_check, structure == 'dicom', output_writer, dump_protocol)
 
 
 def _processResults(datasets, destination, filename, fileformat, overwrite, just_check, mkdirs, output_writer, dump_protocol):

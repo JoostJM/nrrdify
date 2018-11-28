@@ -68,14 +68,9 @@ def main(args=None):
     nrrdify.logger.info('No destination specified, using source folder %s', source_folder)
     destination_folder = source_folder
 
-  if args.structure == 'none':
-    mkdirs = False
-    process_per_folder = args.process_set
-  elif args.structure == 'source':
-    mkdirs = False
+  if args.structure == 'source':
     process_per_folder = True
-  else:  # dicom:
-    mkdirs = True
+  else:  # none or dicom:
     process_per_folder = args.process_set
 
   writer = None
@@ -90,7 +85,7 @@ def main(args=None):
                       args.overwrite,
                       just_check=args.check,
                       process_per_folder=process_per_folder,
-                      mkdirs=mkdirs,
+                      structure=args.structure,
                       output_writer=writer,
                       dump_protocol=args.dump_protocol)
 
