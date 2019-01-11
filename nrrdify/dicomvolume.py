@@ -24,10 +24,12 @@ class DicomVolume:
     self.is_valid = True
     self.is_equidistant = True
     self.is_sorted = False
+    self.n_slices = 0
 
     self.is_4D = False
     self.is_sorted4D = False
     self.split_tag = None
+    self.n_pos = 1
 
     self.post_processing = post_processing
 
@@ -150,11 +152,20 @@ class DicomVolume:
       self.is_equidistant = False
       return
 
+    self.n_slices = len(boundaries) + 1
+
     if len(delta_slices) > len(boundaries):
       self.logger.debug('DicomVolume is 4D')
       self.is_4D = True
+      # Check if the total slice count is equally divisable by n_slices. If not, some volumes in this 4D series
+      # may be missing some slices...
+      if len(self.slices) % self.n_slices > 0:
+        self.logger.warning('Total slice count not equally divisible by n_slices, missing 4D slices?')
+        self.is_equidistant = False
+        return
 
-    self.slices = [f for (d, f) in sorted(zip(locations, self.slices), key=lambda s: s[0])]
+    else:
+      self.slices = [f for (d, f) in sorted(zip(locations, self.slices), key=lambda s: s[0])]
     self.is_sorted = True
 
   def getSimpleITKImage(self):
@@ -234,7 +245,15 @@ class DicomVolume:
       if np.any(delta_slices < 0.03):
         self.logger.warning('Found overlapping slicer in timepoint %s! Split tag "%s" not valid.', t, self.split_tag)
         return False
+
+      if not np.allclose(delta_slices, delta_slices[0], rtol=1e-2):
+        self.logger.warning('Slices are not equidistant!')
+        self.logger.debug('Slice distances:\n%s', delta_slices)
+        self.is_equidistant = False
+        return
       self.slices4D[t] = [f for (d, f) in sorted(zip(locations, self.slices4D[t]), key=lambda s: s[0])]
+
+    self.n_pos = len(self.slices4D.keys())
 
     self.is_sorted4D = True
     return True
