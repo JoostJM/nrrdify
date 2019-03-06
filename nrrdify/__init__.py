@@ -19,6 +19,7 @@ from . import dicomvolume
 logger = logging.getLogger('nrrdify')
 counter = 0
 post_processing = None
+splitter_4D = None
 
 if len(logger.handlers) == 0:
   print('Adding handler for logger')
@@ -172,7 +173,19 @@ def processVolume(volume,
       destination = os.path.join(destination, patient_dir, study_dir)
 
     if volume.check_4D():
-      if hasattr(volume.slices[0], 'DiffusionBValue'):
+      t_count = 0
+      if splitter_4D:
+        for ext_4D, im_4D, sliceCount in splitter_4D(volume):
+          t_count += 1
+          logger.info('Generating NRRD for pt %s, studydate %s, series %s:%s, temporal value %s (%i slices)',
+                      patient_name, study_date, series_number, series_description, ext_4D, sliceCount)
+          fname_4D = '%s_%s' % (filename, ext_4D)
+          _store_image(im_4D, destination, fname_4D, fileformat, patient_name, study_date, sliceCount, overwrite,
+                       output_writer)
+
+      if t_count > 0:
+        logger.debug('4D volume processing complete, found %i temporal positions', t_count)
+      elif hasattr(volume.slices[0], 'DiffusionBValue'):
         # Volume is DWI
         logger.debug('Volume is 4D, attempting DWI splitting on standard bvalue tag')
         b_count = 0
@@ -200,6 +213,7 @@ def processVolume(volume,
             continue
           logger.info('Generating NRRD for pt %s, studydate %s, series %s:%s, temporal value %s (%i slices)',
                       patient_name, study_date, series_number, series_description, t_val, sliceCount)
+          t_val = re.sub(r'\*ep_b(\d{1,4})t?', '\1', t_val)
 
           t_fname = filename + '_' + dicomvolume.DicomVolume.get_safe_filename(t_val)
           _store_image(t_im, destination, t_fname, fileformat, patient_name, study_date, sliceCount, overwrite, output_writer)
