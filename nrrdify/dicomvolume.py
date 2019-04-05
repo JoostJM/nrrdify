@@ -146,7 +146,7 @@ class DicomVolume:
     delta_slices = np.diff(np.array(sorted(locations)))
 
     boundaries = delta_slices[delta_slices > 0.03]  # Exclude slice-distances that are 0 (indicating 4D volume)
-    if not np.allclose(boundaries, boundaries[0], rtol=1e-2):
+    if len(boundaries) > 0 and not np.allclose(boundaries, boundaries[0], rtol=1e-2):
       self.logger.warning('Slices are not equidistant!')
       self.logger.debug('Slice distances:\n%s', boundaries)
       self.is_equidistant = False
@@ -157,7 +157,7 @@ class DicomVolume:
     if len(delta_slices) > len(boundaries):
       self.logger.debug('DicomVolume is 4D')
       self.is_4D = True
-      # Check if the total slice count is equally divisable by n_slices. If not, some volumes in this 4D series
+      # Check if the total slice count is equally divisible by n_slices. If not, some volumes in this 4D series
       # may be missing some slices...
       if len(self.slices) % self.n_slices > 0:
         self.logger.warning('Total slice count not equally divisible by n_slices, missing 4D slices?')
