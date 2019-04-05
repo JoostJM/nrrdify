@@ -47,6 +47,7 @@ def main(args=None):
                            'for already existing files is skipped.')
   parser.add_argument('--check', action='store_true',
                       help='if this argument is specified, DICOMS are checked but not converted.')
+  parser.add_argument('--split3d', action='append', default=None)
 
   args = parser.parse_args(args)
 
@@ -62,6 +63,15 @@ def main(args=None):
     if log_level < logging.INFO:  # Lower logger level if necessary
       nrrdify.logger.setLevel(log_level)
 
+  kwargs = {
+    'filename': args.name,
+    'fileformat': args.format,
+    'overwrite': args.overwrite,
+    'just_check': args.check,
+    'structure': args.structure,
+    'dump_protocol': args.dump_protocol
+  }
+
   source_folder = args.inputFolder
   destination_folder = args.out
   if destination_folder is None:
@@ -69,25 +79,18 @@ def main(args=None):
     destination_folder = source_folder
 
   if args.structure == 'source':
-    process_per_folder = True
+    kwargs['process_per_folder'] = True
   else:  # none or dicom:
-    process_per_folder = args.process_set
+    kwargs['process_per_folder'] = args.process_set
 
-  writer = None
   if args.csv_output is not None:
-    writer = csv.writer(args.csv_output, lineterminator='\n')
-    writer.writerow(['idx', 'patient', 'studydate', 'image', 'numSlices'])
+    kwargs['output_writer'] = csv.writer(args.csv_output, lineterminator='\n')
+    kwargs['output_writer'].writerow(['idx', 'patient', 'studydate', 'image', 'numSlices'])
 
-  nrrdify.walk_folder(source_folder,
-                      destination_folder,
-                      args.name,
-                      args.format,
-                      args.overwrite,
-                      just_check=args.check,
-                      process_per_folder=process_per_folder,
-                      structure=args.structure,
-                      output_writer=writer,
-                      dump_protocol=args.dump_protocol)
+  if args.split3d is not None:
+    kwargs['split_3D'] = args.split3d
+
+  nrrdify.walk_folder(source_folder, destination_folder, **kwargs)
 
 
 if __name__ == '__main__':

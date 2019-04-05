@@ -32,16 +32,7 @@ if len(logger.handlers) == 0:
   logger.setLevel(logging.INFO)
 
 
-def walk_folder(source,
-                destination,
-                filename=None,
-                fileformat='nrrd',
-                overwrite=False,
-                just_check=False,
-                process_per_folder=False,
-                structure=None,
-                output_writer=None,
-                dump_protocol=False):
+def walk_folder(source, destination, structure=None, process_per_folder=False, **kwargs):
   global counter, logger, post_processing
   if not os.path.isdir(source):
     logger.error('Source directory (%s) does not exist! Exiting...', source)
@@ -52,6 +43,7 @@ def walk_folder(source,
   counter = 0
   logger.info('Input (%s) and output (%s) valid, scanning input folder for DICOM files', source, destination)
   datasets = {}  # Holds the dicom files, sorted by series UID ({seriesUID: [files]})
+
   for curdir, dirnames, fnames in os.walk(source):
     if len(fnames) > 0:  # Only process folder if it contains files
       logger.info('Processing folder %s', curdir)
@@ -113,40 +105,63 @@ def walk_folder(source,
         else:
           dest = destination
 
-        _processResults(datasets, dest, filename, fileformat, overwrite, just_check, structure == 'dicom', output_writer, dump_protocol)
+        _processResults(datasets, dest, mkdirs=structure == 'dicom', **kwargs)
         datasets = {}
 
   if not process_per_folder:
-    _processResults(datasets, destination, filename, fileformat, overwrite, just_check, structure == 'dicom', output_writer, dump_protocol)
+    _processResults(datasets, destination, mkdirs=structure == 'dicom', **kwargs)
 
 
-def _processResults(datasets, destination, filename, fileformat, overwrite, just_check, mkdirs, output_writer, dump_protocol):
+def _processResults(datasets, destination, mkdirs, **kwargs):
     global logger
-    if just_check:
-      for ds in datasets:
-        for volume_idx, volume in enumerate(datasets[ds].values()):
-          checkVolume(volume, ds, volume_idx)
-    else:
-      # Done scanning files, now make some NRRDs out of them!
-      logger.info('Input folder scanned, found %d unique DICOM series', len(datasets))
-      if len(datasets) > 1:  # If more than 1 series is found, a custom filename is not possible
-        filename = None
-      for ds in datasets:  # Multiple datasets, so generate name from DICOM
-        for volume_idx, volume in enumerate(datasets[ds].values()):
-          processVolume(volume, destination, filename, fileformat, overwrite, volume_idx, mkdirs, output_writer, dump_protocol)
+    # Done scanning files, now make some NRRDs out of them!
+    logger.info('Input folder scanned, found %d unique DICOM series', len(datasets))
+    if len(datasets) > 1:  # If more than 1 series is found, a custom filename is not possible
+      kwargs['filename'] = None
+
+    for ds in datasets:  # Multiple datasets, so generate name from DICOM
+      volume_idx = 0
+      for volume in datasets[ds].values():
+        sub_volumes = {}
+        split_3D_keys = kwargs.get('split_3D', [])
+
+        volume.sortSlices()
+        if volume.is_valid and not volume.is_equidistant and len(split_3D_keys) > 0:
+          logger.info('Splitting volume by keys: %s', split_3D_keys)
+          for slice in volume.slices:
+            set_id = []
+            for k in split_3D_keys:
+              set_id.append(str(getattr(slice, k, None)))
+            if len(set_id) == 1:
+              set_id = set_id[0]
+            else:
+              set_id = tuple(set_id)
+
+            if set_id not in sub_volumes:
+              sub_volumes[set_id] = dicomvolume.DicomVolume(post_processing)
+
+            sub_volumes[set_id].addSlice(slice)
+        else:
+          sub_volumes[0] = volume
+
+        for v in sub_volumes:
+          if kwargs.get('just_check', False):
+            checkVolume(sub_volumes[v], ds, volume_idx)
+          else:
+            processVolume(sub_volumes[v], destination, volume_idx, mkdirs, **kwargs)
+
+          volume_idx += 1
 
 
-def processVolume(volume,
-                  destination,
-                  filename=None,
-                  fileformat='nrrd',
-                  overwrite=False,
-                  file_idx=None,
-                  mkdirs=False,
-                  output_writer=None,
-                  dump_protocol=False):
+def processVolume(volume, destination, file_idx=None, mkdirs=False, **kwargs):
   global counter, logger
   try:
+    filename = kwargs.get('filename', None)
+    fileformat = kwargs.get('fileformat', '.nrrd')
+    overwrite = kwargs.get('overwrite', False)
+    output_writer = kwargs.get('output_writer', None)
+    dump_protocol = kwargs.get('dump_protocol', False)
+
     if len(volume.slices) == 0:  # No files for this series UID (maybe not image storage?)
       logger.debug('No files for this series...')
       return
