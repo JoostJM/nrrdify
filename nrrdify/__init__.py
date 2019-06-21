@@ -9,6 +9,7 @@
 import logging
 import os
 import re
+import sys
 
 import pydicom
 import SimpleITK as sitk
@@ -48,7 +49,7 @@ def walk_folder(source, destination, structure=None, process_per_folder=False, *
     if len(fnames) > 0:  # Only process folder if it contains files
       logger.info('Processing folder %s', curdir)
 
-      with tqdm.tqdm(fnames, desc='Processing files') as bar:  # Progress reporting
+      with tqdm.tqdm(fnames, desc='Processing files', file=sys.stdout) as bar:  # Progress reporting
         for fname in bar:  # for each file in current folder
           try:
             # Check if it contains a valid DICOM header (first 4 bytes = DICM)
@@ -278,7 +279,7 @@ def _store_image(im, destination, fname, fileformat, patient, studydate, sliceco
       return
 
   logger.info('Storing in %s', nrrd_fname)
-  sitk.WriteImage(im, nrrd_fname)
+  sitk.WriteImage(im, nrrd_fname, False)
 
   if output_writer is not None:
     logger.debug('Storing location in CSV output')
