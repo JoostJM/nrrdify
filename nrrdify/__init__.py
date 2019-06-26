@@ -279,7 +279,7 @@ def _store_image(im, destination, fname, fileformat, patient, studydate, sliceco
       return
 
   logger.info('Storing in %s', nrrd_fname)
-  sitk.WriteImage(im, nrrd_fname, False)
+  sitk.WriteImage(im, str(nrrd_fname))
 
   if output_writer is not None:
     logger.debug('Storing location in CSV output')
