@@ -76,7 +76,7 @@ class DicomVolume:
           self.logger.error('No value found for tag %s in file %s (patient %s, studydate %s, series %d. %s), invalid series!',
                             tag, dfile.filename, patientName, studyDate, series_number, series_description)
           return False
-        if not np.allclose(val, val2, rtol=1e-2):
+        if not np.allclose(val, val2, rtol=1e-2, atol=1e-6):
           self.logger.error('Non-matching values found for tag %s between files %s and %s (patient %s, studydate %s, series %d. %s)',
                             tag, self.slices[0].filename, dfile.filename, patientName, studyDate, series_number, series_description)
           return False

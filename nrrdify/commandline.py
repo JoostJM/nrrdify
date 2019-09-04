@@ -40,7 +40,7 @@ def main(args=None):
   parser.add_argument('--logging-level', metavar='LEVEL',
                       choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
                       default='WARNING', help='Set capture level for logging')
-  parser.add_argument('--log-file', metavar='FILE', type=argparse.FileType('w'), default=None,
+  parser.add_argument('--log-file', metavar='FILE', type=argparse.FileType('a'), default=None,
                       help='File to append logger output to')
   parser.add_argument('--overwrite', action='store_true',
                       help='if this argument is specified, script will overwrite existing files, otherwise, file write '
