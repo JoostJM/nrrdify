@@ -85,7 +85,7 @@ def main(args=None):
 
   if args.csv_output is not None:
     kwargs['output_writer'] = csv.writer(args.csv_output, lineterminator='\n')
-    kwargs['output_writer'].writerow(['idx', 'patient', 'studydate', 'image', 'numSlices'])
+    kwargs['output_writer'].writerow(['idx', 'patient', 'studydate', 'image', 'numSlices', 'orientation'])
 
   if args.split3d is not None:
     kwargs['split_3D'] = args.split3d

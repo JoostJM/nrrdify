@@ -196,9 +196,17 @@ def processVolume(volume, destination, file_idx=None, mkdirs=False, **kwargs):
           logger.info('Generating NRRD for pt %s, studydate %s, series %s:%s, temporal value %s (%i slices)',
                       patient_name, study_date, series_number, series_description, ext_4D, sliceCount)
           fname_4D = '%s_%s' % (filename, ext_4D)
-          _store_image(im_4D, destination, fname_4D, fileformat, patient_name, study_date, sliceCount, overwrite,
-                       output_writer)
-
+          store_name = _store_image(im_4D, destination, fname_4D, fileformat, overwrite)
+          if output_writer is not None and store_name is not None:
+            logger.debug('Storing location in CSV output')
+            output_writer.writerow([
+              counter,
+              patient_name,
+              study_date,
+              store_name.replace(os.path.sep, '/'),
+              sliceCount,
+              volume.getOrientation()
+            ])
       if t_count > 0:
         logger.debug('4D volume processing complete, found %i temporal positions', t_count)
       elif hasattr(volume.slices[0], 'DiffusionBValue'):
@@ -214,7 +222,17 @@ def processVolume(volume, destination, file_idx=None, mkdirs=False, **kwargs):
                       patient_name, study_date, series_number, series_description, b_val, sliceCount)
 
           b_fname = filename + '_b' + str(b_val)
-          _store_image(b_im, destination, b_fname, fileformat, patient_name, study_date, sliceCount, overwrite, output_writer)
+          store_name = _store_image(b_im, destination, b_fname, fileformat, overwrite)
+          if output_writer is not None and store_name is not None:
+            logger.debug('Storing location in CSV output')
+            output_writer.writerow([
+              counter,
+              patient_name,
+              study_date,
+              store_name.replace(os.path.sep, '/'),
+              sliceCount,
+              volume.getOrientation()
+            ])
         if b_count == 0:
           logger.warning('4D volume contains bvalue tag, but unable to perform correct split.')
         else:
@@ -232,7 +250,17 @@ def processVolume(volume, destination, file_idx=None, mkdirs=False, **kwargs):
           t_val = re.sub(r'\*ep_b(\d{1,4})t?', '\1', t_val)
 
           t_fname = filename + '_' + dicomvolume.DicomVolume.get_safe_filename(t_val)
-          _store_image(t_im, destination, t_fname, fileformat, patient_name, study_date, sliceCount, overwrite, output_writer)
+          store_name = _store_image(t_im, destination, t_fname, fileformat, overwrite)
+          if output_writer is not None and store_name is not None:
+            logger.debug('Storing location in CSV output')
+            output_writer.writerow([
+              counter,
+              patient_name,
+              study_date,
+              store_name.replace(os.path.sep, '/'),
+              sliceCount,
+              volume.getOrientation()
+            ])
         if t_count == 0:
           logger.warning('4D volume contains Sequence Name tag, but unable to perform correct split.')
         else:
@@ -249,7 +277,17 @@ def processVolume(volume, destination, file_idx=None, mkdirs=False, **kwargs):
       logger.info('Generating NRRD for pt %s, studydate %s, series %s:%s (%i slices)',
                   patient_name, study_date, series_number, series_description, len(volume.slices))
 
-      _store_image(im, destination, filename, fileformat, patient_name, study_date, len(volume.slices), overwrite, output_writer)
+      store_name = _store_image(im, destination, filename, fileformat, overwrite)
+      if output_writer is not None and store_name is not None:
+        logger.debug('Storing location in CSV output')
+        output_writer.writerow([
+          counter,
+          patient_name,
+          study_date,
+          store_name.replace(os.path.sep, '/'),
+          len(volume.slices),
+          volume.getOrientation()
+        ])
 
     if dump_protocol:
       protocol_fname = os.path.join(destination, filename) + '_protocol.txt'
@@ -262,7 +300,7 @@ def processVolume(volume, destination, file_idx=None, mkdirs=False, **kwargs):
     logger.error('Oh Oh... something went wrong...', exc_info=True)
 
 
-def _store_image(im, destination, fname, fileformat, patient, studydate, slicecount, overwrite=False, output_writer=None):
+def _store_image(im, destination, fname, fileformat, overwrite=False):
   global logger
   target = os.path.join(destination, fname)
 
@@ -281,9 +319,7 @@ def _store_image(im, destination, fname, fileformat, patient, studydate, sliceco
   logger.info('Storing in %s', nrrd_fname)
   sitk.WriteImage(im, str(nrrd_fname))
 
-  if output_writer is not None:
-    logger.debug('Storing location in CSV output')
-    output_writer.writerow([counter, patient, studydate, nrrd_fname.replace(os.path.sep, '/'), slicecount])
+  return nrrd_fname
 
 
 def checkVolume(dicomVolume, uid, volume_idx=0):

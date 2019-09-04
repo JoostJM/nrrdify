@@ -281,6 +281,30 @@ class DicomVolume:
       self.logger.debug('Processing temporal position %d', t)
       yield t, self._getImage(self.slices4D[t]), len(self.slices4D[t])
 
+  def getOrientation(self):
+    assert len(self.slices) > 0, "No slices in this volume!"
+    assert hasattr(self.slices[0], 'ImageOrientationPatient'),\
+        'Invalid volume! does not contain ImageOrientationPatient tag'
+
+    # First, get cosines and make them absolute
+    image_orientation = np.abs(self.slices[0].ImageOrientationPatient)
+    # Xx = 0
+    # Yx = 1
+    # Zx = 2
+    # Xy = 3
+    # Yy = 4
+    # Zy = 5
+    # Xz = 6
+    # Yz = 7
+    # Zz = 8
+
+    if image_orientation[3] >= image_orientation[0]:  # |Xy| >= |Xx| (saggital)
+      return 'sag'
+    elif image_orientation[4] >= image_orientation[7]:  # |Yy| >= |Yz| (Transversal)
+      return 'tra'
+    else:  # Coronal
+      return 'cor'
+
   def writeProtocol(self, proctocol_fname):
     if not self.is_sorted:
       self.sortSlices()
