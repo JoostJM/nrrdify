@@ -332,9 +332,11 @@ def checkVolume(dicomVolume, uid, volume_idx=0):
     dicomVolume.sortSlices()
     if dicomVolume.is_equidistant and dicomVolume.is_valid:
       if volume_idx > 0:
-        logger.info('DicomVolume %s, (volume %d) is valid...', uid, volume_idx + 1)
+        logger.info('DicomVolume %s %s, (volume %d) is valid...',
+                    uid, getattr(dicomVolume.slices[0], 'SeriesDescription', 'N/A'), volume_idx + 1)
       else:
-        logger.info('DicomVolume %s is valid...', uid)
+        logger.info('DicomVolume %s %s is valid...',
+                    uid, getattr(dicomVolume.slices[0], 'SeriesDescription', 'N/A'))
   except KeyboardInterrupt:
     raise
   except:
