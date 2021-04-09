@@ -171,26 +171,17 @@ def processVolume(volume,
       destination = os.path.join(destination, patient_dir, study_dir)
 
     if volume.check_4D():
-      if getattr(volume.slices[0], 'DiffusionBValue', None) is not None:
-        # Volume is DWI
-        logger.info('Volum is 4D, attempting DWI splitting on standard bvalue tag')
-        b_count = 0
-        for b_val, b_im, sliceCount in volume.getSimpleITK4DImage(max_value=2000):
-          b_count += 1
-          if b_im is None:
-            continue
-
-          logger.info('Generating NRRD for pt %s, studydate %s, series %s:%s, bvalue %s (%i slices)',
-                      patient_name, study_date, series_number, series_description, b_val, sliceCount)
-
-          b_fname = filename + '_b' + str(b_val)
-          _store_image(b_im, destination, b_fname, fileformat, patient_name, study_date, sliceCount, overwrite, output_writer)
-        if b_count == 0:
-          logger.warning('4D volume contains bvalue tag, but unable to perform correct split.')
-        else:
-          logger.debug('DWI volume processing complete, found %i b values', b_count)
-      else:
-        logger.warning("Volume is 4D, but not DWI (patient %s, studydate %s series %d. %s), skipping...",
+      if not process_4D(volume,
+                        patient_name,
+                        study_date,
+                        series_number,
+                        series_description,
+                        destination,
+                        filename,
+                        fileformat,
+                        overwrite,
+                        output_writer):
+        logger.warning("Volume is 4D, but was not able to split (patient %s, studydate %s series %d. %s), skipping...",
                        patient_name, study_date, series_number, series_description)
         return
     else:
@@ -214,6 +205,82 @@ def processVolume(volume,
     logger.error('Oh Oh... something went wrong...', exc_info=True)
 
 
+def process_4D(volume,
+               patient_name,
+               study_date,
+               series_number,
+               series_description,
+               destination,
+               filename=None,
+               fileformat='nrrd',
+               overwrite=False,
+               output_writer=None):
+  if getattr(volume.slices[0], 'DiffusionBValue', None) is not None:
+    # Volume is DWI
+    logger.info('Volume is 4D, attempting DWI splitting on standard bvalue tag')
+    b_count = 0
+    for b_val, b_im, sliceCount in volume.getSimpleITK4DImage(max_value=2000):
+      b_count += 1
+      if b_im is None:
+        continue
+
+      logger.info('Generating NRRD for pt %s, studydate %s, series %s:%s, bvalue %s (%i slices)',
+                  patient_name, study_date, series_number, series_description, b_val, sliceCount)
+
+      b_fname = filename + '_b' + str(b_val)
+      _store_image(b_im, destination, b_fname, fileformat, patient_name, study_date, sliceCount, overwrite,
+                   output_writer)
+    if b_count == 0:
+      logger.warning('4D volume contains standard bvalue tag, but unable to perform correct split.')
+    else:
+      logger.debug('DWI volume processing complete, found %i b values', b_count)
+      return True
+
+  if 0x0019100c in volume.slices[0]:
+    # Volume is DWI
+    logger.info('Volume is 4D, attempting DWI splitting on private bvalue tag')
+    b_count = 0
+    for b_val, b_im, sliceCount in volume.getSimpleITK4DImage(max_value=2000, splitTag=0x0019100c):
+      b_count += 1
+      if b_im is None:
+        continue
+
+      logger.info('Generating NRRD for pt %s, studydate %s, series %s:%s, bvalue %s (%i slices)',
+                  patient_name, study_date, series_number, series_description, b_val, sliceCount)
+
+      b_fname = filename + '_b' + str(b_val)
+      _store_image(b_im, destination, b_fname, fileformat, patient_name, study_date, sliceCount, overwrite,
+                   output_writer)
+    if b_count == 0:
+      logger.warning('4D volume contains private bvalue tag, but unable to perform correct split.')
+    else:
+      logger.debug('DWI volume processing complete, found %i b values', b_count)
+      return True
+
+  if getattr(volume.slices[0], 'TemporalPositionIdentifier', None) is not None:
+    # Volume is 4D on Temporal Position
+    logger.info('Volume is 4D, attempting splitting on Temporal Position tag')
+    pos_count = 0
+    for pos, temp_im, sliceCount in volume.getSimpleITK4DImage(max_value=2000, splitTag=0x00200100):
+      pos_count += 1
+      if temp_im is None:
+        continue
+
+      logger.info('Generating NRRD for pt %s, studydate %s, series %s:%s, temporal position %s (%i slices)',
+                  patient_name, study_date, series_number, series_description, pos, sliceCount)
+
+      pos_fname = filename + '_' + str(pos)
+      _store_image(temp_im, destination, pos_fname, fileformat, patient_name, study_date, sliceCount, overwrite,
+                   output_writer)
+    if pos_count == 0:
+      logger.warning('4D volume contains Temporal Position tag, but unable to perform correct split.')
+    else:
+      logger.debug('4D volume processing complete, found %i temporal positions', pos_count)
+      return True
+
+  return False
+
+
 def _store_image(im, destination, fname, fileformat, patient, studydate, slicecount, overwrite=False, output_writer=None):
   global logger
   target = os.path.join(destination, fname)
@@ -231,7 +298,7 @@ def _store_image(im, destination, fname, fileformat, patient, studydate, sliceco
       return
 
   logger.info('Storing in %s', nrrd_fname)
-  sitk.WriteImage(im, nrrd_fname)
+  sitk.WriteImage(im, str(nrrd_fname))
 
   if output_writer is not None:
     logger.debug('Storing location in CSV output')

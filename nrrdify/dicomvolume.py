@@ -24,6 +24,8 @@ class DicomVolume:
     self.is_valid = True
     self.is_equidistant = True
     self.is_sorted = False
+    
+    self.z_indices = None
 
     self.is_4D = False
     self.is_sorted4D = False
@@ -68,6 +70,7 @@ class DicomVolume:
         self.logger.error('No value found for tag %s in file %s (patient %s, studydate %s, series %d. %s), invalid series!',
                           tag, self.slices[0].filename, patientName, studyDate, series_number, series_description)
         return False
+
       for dfile in self.slices[1:]:
         val2 = getattr(dfile, tag, None)
         if val2 is None:
@@ -176,13 +179,19 @@ class DicomVolume:
     self.slices4D = {}
     self.split_tag = splitTag
     for s in self.slices:
-      temporal_position = getattr(s, splitTag, None)
+      if isinstance(splitTag, int):
+        temporal_position = str(s[splitTag].value)
+      else:
+        temporal_position = getattr(s, splitTag, None)
       if temporal_position is None:
         self.logger.error('Split Tag %s not valid, missing value in file %s', splitTag, s.filename)
         return False
 
       if isinstance(temporal_position, float):
         if temporal_position.is_integer():
+          temporal_position = int(temporal_position)
+      elif isinstance(temporal_position, str):
+        if temporal_position.strip().isdigit():
           temporal_position = int(temporal_position)
       elif not isinstance(temporal_position, int):
         try:
@@ -242,7 +251,7 @@ class DicomVolume:
       self.logger.error('Cannot generate 4D image, DicomVolume is 3D!')
       return
 
-    if self.slices4D is None:
+    if self.slices4D is None or self.split_tag != splitTag:
       if not self.split4D(splitTag, max_value):
         return
 
@@ -253,6 +262,38 @@ class DicomVolume:
     for t in self.slices4D:
       self.logger.debug('Processing temporal position %d', t)
       yield t, self._getImage(self.slices4D[t]), len(self.slices4D[t])
+
+  def _compute_z_indices(self, ):
+    if self.z_indices is not None:
+      return
+
+    if not self.is_sorted:
+      self.sortSlices()
+    
+    if self.is_4D:
+      if not self.is_sorted4D:
+        raise ValueError("Volume is 4D, first ensure volume is 4D sorted before continuing!")
+      self.z_indices = {}
+      for t in self.slices4D:
+        for idx, s in enumerate(self.slices4D[t]):
+          self.z_indices[s.get('SOPInstanceUID')] = (idx, t)
+    else:
+      self.z_indices = {s.get('SOPInstanceUID'): (idx,) for idx, s in enumerate(self.slices)}
+
+  def get_z_index(self, sopinstanceuid):
+    if self.z_indices is None:
+        self._compute_z_indices()
+    
+    return self.z_indices[sopinstanceuid][0]
+        
+  def get_temporal_position(self, sopinstanceuid):
+    if not self.is_4D:
+      return 0
+
+    if self.z_indices is None:
+      self._compute_z_indices()
+    
+    return self.z_indices[sopinstanceuid][1]
 
   def writeProtocol(self, proctocol_fname):
     if not self.is_sorted:
