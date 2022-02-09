@@ -10,7 +10,7 @@ import argparse
 import csv
 import logging
 
-import nrrdify
+import nrrdify.walker
 
 
 def main(args=None):
@@ -21,6 +21,8 @@ def main(args=None):
   parser.add_argument("--name", "-n", help="Filename for the new file, without extension. If omitted, or more series "
                                            "are found, Filename is generated from DICOM tags: "
                                            "<PatientName>-<StudyDate>-<SeriesNumber>. <SeriesDescription>")
+  parser.add_argument('--combine4d', action='store_true',
+                      help='If specified, 4D volumes are combined into a single output file')
   parser.add_argument("--format", "-f", nargs="?", default="nrrd", choices=["nrrd", "nii", "nii.gz"],
                       help="Image format to convert to. Default is the 'nrrd' format")
   parser.add_argument('--structure', '-s', choices=['none', 'source', 'dicom'], default='none',
@@ -31,6 +33,7 @@ def main(args=None):
                       help='If specified, process the input as one set, otherwise, process set per folder. If structure'
                            'is "source", this setting has no effect (always processed per folder). '
                            'N.B. processing per set can be very memory intensive!')
+  parser.add_argument('--compress', action='store_true', help='If specified, applies compression on the output')
   parser.add_argument('--csv-output', '-co', type=argparse.FileType('w'), default=None,
                       help='Specifies a new CSV-file to store the locations of the generated files, overwrites'
                            'existing files. If omitted, no CSV output is generated.')
@@ -78,16 +81,17 @@ def main(args=None):
     writer = csv.writer(args.csv_output, lineterminator='\n')
     writer.writerow(['idx', 'patient', 'studydate', 'image', 'numSlices'])
 
-  nrrdify.walk_folder(source_folder,
-                      destination_folder,
-                      args.name,
-                      args.format,
-                      args.overwrite,
-                      just_check=args.check,
-                      process_per_folder=process_per_folder,
-                      structure=args.structure,
-                      output_writer=writer,
-                      dump_protocol=args.dump_protocol)
+  walker = nrrdify.walker.Walker(**{
+    'format': args.format,
+    'overwrite': args.overwrite,
+    'process_per_folder': process_per_folder,
+    'structure': args.structure,
+    'output_writer': writer,
+    'dump_protocol': args.dump_protocol,
+    'combine4d': args.combine4d,
+    'compress': args.compress
+  })
+  walker.run(source_folder, destination_folder, filename=args.name, just_check=args.check)
 
 
 if __name__ == '__main__':

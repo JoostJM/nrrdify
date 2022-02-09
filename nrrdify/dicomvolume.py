@@ -6,6 +6,7 @@
 #  Licensed under the 3-clause BSD License
 # ========================================================================
 
+from itertools import chain
 import logging
 import struct
 import re
@@ -180,7 +181,9 @@ class DicomVolume:
     self.split_tag = splitTag
     for s in self.slices:
       if isinstance(splitTag, int):
-        temporal_position = str(s[splitTag].value)
+        temporal_position = s.get(splitTag, None)
+        if temporal_position is not None:
+          temporal_position = str(temporal_position.value)
       else:
         temporal_position = getattr(s, splitTag, None)
       if temporal_position is None:
@@ -240,7 +243,7 @@ class DicomVolume:
     self.is_sorted4D = True
     return True
 
-  def getSimpleITK4DImage(self, splitTag='DiffusionBValue', max_value=None):
+  def getSimpleITK4DImage(self, splitTag=None, max_value=None):
     if not self.is_sorted:
       self.sortSlices()
 
@@ -251,7 +254,9 @@ class DicomVolume:
       self.logger.error('Cannot generate 4D image, DicomVolume is 3D!')
       return
 
-    if self.slices4D is None or self.split_tag != splitTag:
+    if self.slices4D is None or (splitTag is not None and self.split_tag != splitTag):
+      if splitTag is None:
+        splitTag = 'DiffusionBValue'
       if not self.split4D(splitTag, max_value):
         return
 
