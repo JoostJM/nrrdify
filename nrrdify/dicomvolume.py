@@ -6,10 +6,9 @@
 #  Licensed under the 3-clause BSD License
 # ========================================================================
 
-from itertools import chain
 import logging
+import os
 import struct
-import re
 
 import numpy as np
 import SimpleITK as sitk
@@ -21,6 +20,8 @@ class DicomVolume:
     self.slices = []
     self.slices4D = None
     self.logger = logging.getLogger('nrrdify.DicomVolume')
+
+    self._descriptor = None
 
     self.is_valid = True
     self.is_equidistant = True
@@ -89,8 +90,8 @@ class DicomVolume:
     image_orientation = slices[0].ImageOrientationPatient
     xvector = image_orientation[:3]
     yvector = image_orientation[3:]
-    zvector = np.cross(xvector, yvector)  # This function assumes that the Z axis of the image stack is orthogonal to the Y and X axis
-
+    # This function assumes that the Z axis of the image stack is orthogonal to the Y and X axis
+    zvector = np.cross(xvector, yvector)
     locations = [np.dot(dfile.ImagePositionPatient, zvector) for dfile in slices]  # Z locations in mm of each slice
     return locations
 
@@ -110,13 +111,23 @@ class DicomVolume:
 
     return im
 
-  def build_filename(self):
-    patient_name = str(getattr(self.slices[0], 'PatientName', '')).split('^')[0]
-    study_date = getattr(self.slices[0], 'StudyDate', '19000101')
-    series_description = getattr(self.slices[0], 'SeriesDescription', 'Unkn')
-    series_number = getattr(self.slices[0], 'SeriesNumber', -1)
+  @property
+  def descriptor(self):
+    if self._descriptor is None:
+      self._descriptor = Descriptor(self.slices[0])
+    return self._descriptor
 
-    filename = '%s-%s-%s. %s' % (patient_name, study_date, series_number, series_description)
+  def build_filename(self):
+    filename = '%s-%s-%s. %s' % (
+      self.descriptor.patient_name,
+      self.descriptor.study_date,
+      self.descriptor.series_number,
+      self.descriptor.series_description
+    )
+    return self.normalize_filename(filename)
+
+  @staticmethod
+  def normalize_filename(filename):
     # Remove invalid characters from filename
     for c in r'[]/\;,><&*:%=+@!#^()|?^':
       filename = filename.replace(c, '')
@@ -318,3 +329,11 @@ class DicomVolume:
         if 0x00280013 in dicfile:
           del dicfile[0x00280013]
         protocol_fs.write(str(dicfile) + divider)
+
+
+class Descriptor:
+  def __init__(self, dicfile):
+    self.patient_name = str(getattr(dicfile, 'PatientName', '')).split('^')[0]
+    self.study_date = getattr(dicfile, 'StudyDate', '19000101')
+    self.series_description = getattr(dicfile, 'SeriesDescription', 'Unkn')
+    self.series_number = getattr(dicfile, 'SeriesNumber', -1)

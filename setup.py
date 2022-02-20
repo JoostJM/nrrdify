@@ -17,7 +17,7 @@ setup(
   author='Joost van Griethuysen',
   author_email='j.v.griethuysen@nki.nl',
 
-  version='0.2',
+  version='0.3',
 
   packages=['nrrdify'],
   zip_safe=False,

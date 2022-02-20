@@ -125,8 +125,6 @@ class Walker:
         self.logger.debug('No files for this series...')
         return
 
-      descriptor = Descriptor(volume[0])
-
       if filename is None:  # Generate a filename from DICOM metadata
         filename = volume.build_filename()
 
@@ -135,8 +133,8 @@ class Walker:
 
       if structure == 'dicom':
         # Remove invalid characters from dir names
-        patient_dir = descriptor.patient_name
-        study_dir = descriptor.study_date
+        patient_dir = volume.descriptor.patient_name
+        study_dir = volume.descriptor.study_date
         for c in r'[]/\;,><&*:%=+@!#^()|?^':
           patient_dir = patient_dir.replace(c, '')
           study_dir = study_dir.replace(c, '')
@@ -144,10 +142,10 @@ class Walker:
         destination = os.path.join(destination, patient_dir, study_dir)
 
       if volume.check_4D():
-        if not self._process4D(volume, filename, destination, descriptor):
+        if not self._process4D(volume, filename, destination):
           self.logger.warning(
             "Volume is 4D, but was not able to split (patient {patient_name}, studydate {study_date), "
-            "series {series_number:d}. {series_description}), skipping...".format(**descriptor.__dict__))
+            "series {series_number:d}. {series_description}), skipping...".format(**volume.descriptor.__dict__))
           return
       else:
         im = volume.getSimpleITKImage()
@@ -155,10 +153,10 @@ class Walker:
           return
 
         self.logger.info('Generating NRRD for patient {patient_name}, studydate {study_date), '
-                         'series {series_number:d}. {series_description}, (%i slices)'.format(**descriptor.__dict__),
+                         'series {series_number:d}. {series_description}, (%i slices)'.format(**volume.descriptor.__dict__),
                     len(volume.slices))
 
-        self._store_image(im, destination, filename, descriptor, len(volume.slices))
+        self._store_image(im, destination, filename, volume.descriptor, len(volume.slices))
 
       if dump_protocol:
         protocol_fname = os.path.join(destination, filename) + '_protocol.txt'
@@ -170,7 +168,7 @@ class Walker:
     except:
       self.logger.error('Oh Oh... something went wrong...', exc_info=True)
 
-  def _process4D(self, volume: dicomvolume.DicomVolume, filename, destination, descriptor):
+  def _process4D(self, volume: dicomvolume.DicomVolume, filename, destination):
     if volume.split4D('DiffusionBValue', 2000) and volume.sortSlices4D():
       # Volume is DWI
       self.logger.info('Volume is 4D, splitting DWI on standard bvalue tag')
@@ -204,8 +202,8 @@ class Walker:
         'MultiVolume.NumberOfFrames': len(positions)
       }
       self.logger.info('Generating NRRD for patient {patient_name}, studydate {study_date}, series {series_number:d}. '
-                       '{series_description}, (%i slices)'.format(**descriptor.__dict__), sliceCount)
-      self._store_image(im4d, destination, filename, descriptor, sliceCount, header_updates=headers)
+                       '{series_description}, (%i slices)'.format(**volume.descriptor.__dict__), sliceCount)
+      self._store_image(im4d, destination, filename, volume.descriptor, sliceCount, header_updates=headers)
       return True
     else:
       positions = 0
@@ -216,11 +214,11 @@ class Walker:
 
         self.logger.info('Generating NRRD for patient {patient_name}, studydate {study_date}, '
                          'series {series_number:d}. {series_description}, '
-                         'temporal position %s (%i slices)'.format(**descriptor.__dict__),
+                         'temporal position %s (%i slices)'.format(**volume.descriptor.__dict__),
                           position, sliceCount)
 
         pos_fname = filename + prefix + str(position)
-        self._store_image(im, destination, pos_fname, descriptor, sliceCount)
+        self._store_image(im, destination, pos_fname, volume.descriptor, sliceCount)
 
       if positions == 0:
         self.logger.warning('4D volume contains standard bvalue tag, but unable to perform correct split.')
@@ -293,11 +291,3 @@ class Walker:
       raise
     except:
       self.logger.error('Oh Oh... something went wrong...', exc_info=True)
-
-
-class Descriptor:
-  def __init__(self, dicfile):
-    self.patient_name = str(getattr(dicfile, 'PatientName', '')).split('^')[0]
-    self.study_date = getattr(dicfile, 'StudyDate', '19000101')
-    self.series_description = getattr(dicfile, 'SeriesDescription', 'Unkn')
-    self.series_number = getattr(dicfile, 'SeriesNumber', -1)
