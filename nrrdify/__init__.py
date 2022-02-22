@@ -79,7 +79,7 @@ def walk_folder(source, destination, structure=None, process_per_folder=False, *
                 continue
             elif imagetype is None:  # Sop class is valid, does it contain image type?
                 logger.debug("missing Image Type tag in dicom file %s", os.path.join(curdir, fname))
-                continue  # Error cannot sort, so skip and go To next file
+                imagetype = "UNK"
 
             if imagetype is None:
               imagetype = 'RTDOSE'
