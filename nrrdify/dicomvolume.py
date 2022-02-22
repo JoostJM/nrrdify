@@ -21,9 +21,13 @@ class DicomVolume:
     self.slices4D = None
     self.logger = logging.getLogger('nrrdify.DicomVolume')
 
+    self._descriptor = None
+
     self.is_valid = True
     self.is_equidistant = True
     self.is_sorted = False
+
+    self.z_indices = None
     self.n_slices = 0
 
     self.is_4D = False
@@ -70,6 +74,7 @@ class DicomVolume:
         self.logger.error('No value found for tag %s in file %s (patient %s, studydate %s, series %d. %s), invalid series!',
                           tag, self.slices[0].filename, patientName, studyDate, series_number, series_description)
         return False
+
       for dfile in self.slices[1:]:
         val2 = getattr(dfile, tag, None)
         if val2 is None:
@@ -87,8 +92,8 @@ class DicomVolume:
     image_orientation = slices[0].ImageOrientationPatient
     xvector = image_orientation[:3]
     yvector = image_orientation[3:]
-    zvector = np.cross(xvector, yvector)  # This function assumes that the Z axis of the image stack is orthogonal to the Y and X axis
-
+    # This function assumes that the Z axis of the image stack is orthogonal to the Y and X axis
+    zvector = np.cross(xvector, yvector)
     locations = [np.dot(dfile.ImagePositionPatient, zvector) for dfile in slices]  # Z locations in mm of each slice
     return locations
 
@@ -108,22 +113,27 @@ class DicomVolume:
 
     return im
 
+  @property
+  def descriptor(self):
+    if self._descriptor is None:
+      self._descriptor = Descriptor(self.slices[0])
+    return self._descriptor
+
   def build_filename(self):
-    patient_name = str(getattr(self.slices[0], 'PatientName', '')).split('^')[0]
-    study_date = getattr(self.slices[0], 'StudyDate', '19000101')
-    series_description = getattr(self.slices[0], 'SeriesDescription', 'Unkn')
-    series_number = getattr(self.slices[0], 'SeriesNumber', -1)
-
-    filename = '%s-%s-%s. %s' % (patient_name, study_date, series_number, series_description)
-    filename = self.get_safe_filename(filename)
-
-    return filename
+    filename = '%s-%s-%s. %s' % (
+      self.descriptor.patient_name,
+      self.descriptor.study_date,
+      self.descriptor.series_number,
+      self.descriptor.series_description
+    )
+    return self.normalize_filename(filename)
 
   @staticmethod
-  def get_safe_filename(filename):
+  def normalize_filename(filename):
     # Remove invalid characters from filename
     for c in r'[]/\;,><&*:%=+@!#^()|?^':
       filename = filename.replace(c, '')
+
     return filename
 
   def sortSlices(self):
@@ -192,7 +202,12 @@ class DicomVolume:
     self.slices4D = {}
     self.split_tag = splitTag
     for s in self.slices:
-      temporal_position = getattr(s, splitTag, None)
+      if isinstance(splitTag, int):
+        temporal_position = s.get(splitTag, None)
+        if temporal_position is not None:
+          temporal_position = temporal_position.value
+      else:
+        temporal_position = getattr(s, splitTag, None)
       if temporal_position is None:
         self.logger.error('Split Tag %s not valid, missing value in file %s', splitTag, s.filename)
         return False
@@ -202,7 +217,10 @@ class DicomVolume:
         if temporal_position.is_integer():
           temporal_position = int(temporal_position)
       elif isinstance(temporal_position, six.string_types):
-        is_string_temporal = True
+        if temporal_position.strip().isdigit():
+          temporal_position = int(temporal_position)
+        else:
+          is_string_temporal = True
       elif not isinstance(temporal_position, int):
         try:
           temporal_position = float(struct.unpack('d', temporal_position)[0])
@@ -258,7 +276,7 @@ class DicomVolume:
     self.is_sorted4D = True
     return True
 
-  def getSimpleITK4DImage(self, splitTag='DiffusionBValue', max_value=None):
+  def getSimpleITK4DImage(self, splitTag=None, max_value=None):
     if not self.is_sorted:
       self.sortSlices()
 
@@ -269,7 +287,9 @@ class DicomVolume:
       self.logger.error('Cannot generate 4D image, DicomVolume is 3D!')
       return
 
-    if self.slices4D is None:
+    if self.slices4D is None or (splitTag is not None and self.split_tag != splitTag):
+      if splitTag is None:
+        splitTag = 'DiffusionBValue'
       if not self.split4D(splitTag, max_value):
         return
 
@@ -280,6 +300,38 @@ class DicomVolume:
     for t in self.slices4D:
       self.logger.debug('Processing temporal position %d', t)
       yield t, self._getImage(self.slices4D[t]), len(self.slices4D[t])
+
+  def _compute_z_indices(self, ):
+    if self.z_indices is not None:
+      return
+
+    if not self.is_sorted:
+      self.sortSlices()
+
+    if self.is_4D:
+      if not self.is_sorted4D:
+        raise ValueError("Volume is 4D, first ensure volume is 4D sorted before continuing!")
+      self.z_indices = {}
+      for t in self.slices4D:
+        for idx, s in enumerate(self.slices4D[t]):
+          self.z_indices[s.get('SOPInstanceUID')] = (idx, t)
+    else:
+      self.z_indices = {s.get('SOPInstanceUID'): (idx,) for idx, s in enumerate(self.slices)}
+
+  def get_z_index(self, sopinstanceuid):
+    if self.z_indices is None:
+        self._compute_z_indices()
+
+    return self.z_indices[sopinstanceuid][0]
+
+  def get_temporal_position(self, sopinstanceuid):
+    if not self.is_4D:
+      return 0
+
+    if self.z_indices is None:
+      self._compute_z_indices()
+
+    return self.z_indices[sopinstanceuid][1]
 
   def getOrientation(self):
     assert len(self.slices) > 0, "No slices in this volume!"
@@ -323,3 +375,11 @@ class DicomVolume:
         if 0x00280013 in dicfile:
           del dicfile[0x00280013]
         protocol_fs.write(str(dicfile) + divider)
+
+
+class Descriptor:
+  def __init__(self, dicfile):
+    self.patient_name = str(getattr(dicfile, 'PatientName', '')).split('^')[0]
+    self.study_date = getattr(dicfile, 'StudyDate', '19000101')
+    self.series_description = getattr(dicfile, 'SeriesDescription', 'Unkn')
+    self.series_number = getattr(dicfile, 'SeriesNumber', -1)

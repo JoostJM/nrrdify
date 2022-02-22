@@ -10,7 +10,7 @@ import argparse
 import csv
 import logging
 
-import nrrdify
+import nrrdify.walker
 
 
 def main(args=None):
@@ -21,6 +21,8 @@ def main(args=None):
   parser.add_argument("--name", "-n", help="Filename for the new file, without extension. If omitted, or more series "
                                            "are found, Filename is generated from DICOM tags: "
                                            "<PatientName>-<StudyDate>-<SeriesNumber>. <SeriesDescription>")
+  parser.add_argument('--combine4d', action='store_true',
+                      help='If specified, 4D volumes are combined into a single output file')
   parser.add_argument("--format", "-f", nargs="?", default="nrrd", choices=["nrrd", "nii", "nii.gz"],
                       help="Image format to convert to. Default is the 'nrrd' format")
   parser.add_argument('--structure', '-s', choices=['none', 'source', 'dicom'], default='none',
@@ -31,6 +33,7 @@ def main(args=None):
                       help='If specified, process the input as one set, otherwise, process set per folder. If structure'
                            'is "source", this setting has no effect (always processed per folder). '
                            'N.B. processing per set can be very memory intensive!')
+  parser.add_argument('--compress', action='store_true', help='If specified, applies compression on the output')
   parser.add_argument('--csv-output', '-co', type=argparse.FileType('w'), default=None,
                       help='Specifies a new CSV-file to store the locations of the generated files, overwrites'
                            'existing files. If omitted, no CSV output is generated.')
@@ -64,12 +67,12 @@ def main(args=None):
       nrrdify.logger.setLevel(log_level)
 
   kwargs = {
-    'filename': args.name,
-    'fileformat': args.format,
+    'format': args.format,
     'overwrite': args.overwrite,
-    'just_check': args.check,
     'structure': args.structure,
-    'dump_protocol': args.dump_protocol
+    'dump_protocol': args.dump_protocol,
+    'combine4d': args.combine4d,
+    'compress': args.compress
   }
 
   source_folder = args.inputFolder
@@ -90,7 +93,8 @@ def main(args=None):
   if args.split3d is not None:
     kwargs['split_3D'] = args.split3d
 
-  nrrdify.walk_folder(source_folder, destination_folder, **kwargs)
+  walker = nrrdify.walker.Walker(**kwargs)
+  walker.run(source_folder, destination_folder, filename=args.name, just_check=args.check)
 
 
 if __name__ == '__main__':
