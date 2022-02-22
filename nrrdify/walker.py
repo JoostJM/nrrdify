@@ -194,16 +194,15 @@ class Walker:
       sliceCount = 0
       ims = {pos: im for pos, im, sliceCount in volume.getSimpleITK4DImage()}
       positions = list(sorted(ims.keys()))
-      im4d = sitk.Compose([ims[t] for t in positions])
-      headers = {
-        'MultiVolume.FrameIdentifyingDICOMTagName': splitTag,
-        'MultiVolume.FrameIdentifyingDICOMTagUnits': splitUnit,
-        'MultiVolume.FrameLabels': ','.join(str(p) for p in positions),
-        'MultiVolume.NumberOfFrames': len(positions)
-      }
+      im4d: sitk.Image = sitk.Compose([ims[t] for t in positions])
+      im4d.SetMetaData('MultiVolume.FrameIdentifyingDICOMTagName', splitTag)
+      im4d.SetMetaData('MultiVolume.FrameIdentifyingDICOMTagUnits', splitUnit)
+      im4d.SetMetaData('MultiVolume.FrameLabels', ','.join(str(p) for p in positions))
+      im4d.SetMetaData('MultiVolume.NumberOfFrames', str(len(positions)))
+
       self.logger.info('Generating NRRD for patient {patient_name}, studydate {study_date}, series {series_number:d}. '
                        '{series_description}, (%i slices)'.format(**volume.descriptor.__dict__), sliceCount)
-      self._store_image(im4d, destination, filename, volume.descriptor, sliceCount, header_updates=headers)
+      self._store_image(im4d, destination, filename, volume.descriptor, sliceCount)
       return True
     else:
       positions = 0
