@@ -46,7 +46,7 @@ class Walker:
               with open(os.path.join(curdir, fname), mode='rb') as openFile:
                 openFile.seek(128)
                 header = openFile.read(4)
-                if header.decode() != 'DICM':
+                if header != b'DICM':
                   # Not a valid DICOM file, skip to next
                   self.logger.debug('File %s has no valid DICOM header', os.path.join(curdir, fname))
                   continue  # Go to next file
