@@ -48,6 +48,7 @@ class Walker:
                 header = openFile.read(4)
                 if header.decode() != 'DICM':
                   # Not a valid DICOM file, skip to next
+                  self.logger.debug('File %s has no valid DICOM header', os.path.join(curdir, fname))
                   continue  # Go to next file
 
               # Load dicom file using PyDicom (needed for name extraction, sorting of series and slices)
@@ -59,13 +60,16 @@ class Walker:
               modality = getattr(dicfile, 'Modality', '')
 
               if series_uid is None:
+                self.logger.debug('Dicom file %s has no series UID', os.path.join(curdir, fname))
                 continue  # Error cannot sort, so skip and go To next file
               if sop_class is None:
+                self.logger.debug('Dicom file %s has no SOP Class', os.path.join(curdir, fname))
                 continue  # not image dicom file, so skip and go to next file
 
               if modality == 'RTDOSE':
                 self.logger.debug('Dicom file %s is RT dose storage', os.path.join(curdir, fname))
               elif 'Image Storage' not in sop_class.name:  # Not RT Dose, is the sopclass valid?
+                self.logger.debug('Dicom file %s has no valid SOP Class', os.path.join(curdir, fname))
                 continue
               elif imagetype is None:  # Sop class is valid, does it contain image type?
                 self.logger.debug("missing Image Type tag in dicom file %s", os.path.join(curdir, fname))
@@ -167,7 +171,7 @@ class Walker:
       if volume.check_4D():
         if not self._process4d(volume, filename, destination):
           self.logger.warning(
-            "Volume is 4D, but was not able to split (patient {patient_name}, studydate {study_date), "
+            "Volume is 4D, but was not able to split (patient {patient_name}, studydate {study_date}, "
             "series {series_number:d}. {series_description}), skipping...".format(**volume.descriptor.__dict__))
           return
       else:
@@ -175,7 +179,7 @@ class Walker:
         if im is None:
           return
 
-        self.logger.info('Generating NRRD for patient {patient_name}, studydate {study_date), series {series_number:d}.'
+        self.logger.info('Generating NRRD for patient {patient_name}, studydate {study_date}, series {series_number:d}.'
                          ' {series_description}, (%i slices)'.format(**volume.descriptor.__dict__), len(volume.slices))
 
         self._store_image(im, destination, filename, volume.descriptor, len(volume.slices), volume.getOrientation())

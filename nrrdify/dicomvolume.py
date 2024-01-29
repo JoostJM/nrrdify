@@ -111,6 +111,7 @@ class DicomVolume:
       im = reader.Execute()
 
     if self.post_processing is not None:
+      self.logger.info('Applying post processing')
       im = self.post_processing(im, slices)
 
     return im
@@ -256,7 +257,7 @@ class DicomVolume:
       if slice_count is None:
         slice_count = len(self.slices4D[t])
       elif len(self.slices4D[t]) != slice_count:
-        self.logger.warning('Different number of slices between temporal positions! Split tag "%s" not valid')
+        self.logger.warning('Different number of slices between temporal positions! Split tag "%s" not valid', self.split_tag)
         return False
 
       locations = self._get_slice_locations(self.slices4D[t])
