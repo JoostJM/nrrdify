@@ -39,8 +39,11 @@ class Walker:
       if len(fnames) > 0:  # Only process folder if it contains files
         self.logger.info('Processing folder %s', curdir)
 
-        with tqdm.tqdm(fnames, desc='Processing files', file=sys.stdout) as bar:  # Progress reporting
-          for fname in bar:  # for each file in current folder
+        it = fnames.__iter__()
+        if self.config.get('use_pbar', True):  # Progress reporting
+          it = tqdm.tqdm(fnames, desc='Processing files', file=self.config.get('pbar_out', sys.stdout))
+        try:
+          for fname in it:  # for each file in current folder
             try:
               # Check if it contains a valid DICOM header (first 4 bytes = DICM)
               with open(os.path.join(curdir, fname), mode='rb') as openFile:
@@ -91,6 +94,9 @@ class Walker:
               return
             except:
               self.logger.error('DOH!! Something went wrong!', exc_info=True)
+        finally:
+          if self.config.get('use_pbar', True):
+            it.close()
         if process_per_folder:
           if structure == 'source':
             dest = os.path.join(destination, os.path.relpath(curdir, source))
