@@ -24,7 +24,7 @@ setup(
 
   entry_points={
         'console_scripts': [
-            'nrrdify=nrrdify.commandline:main'
+            'nrrdify=nrrdify.__main__:main'
         ]},
 
   description='DICOM conversion script to check and sort DICOM slices prior to conversion using SimpleITK',

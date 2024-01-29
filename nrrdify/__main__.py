@@ -72,7 +72,8 @@ def main(args=None):
     'structure': args.structure,
     'dump_protocol': args.dump_protocol,
     'combine4d': args.combine4d,
-    'compress': args.compress
+    'compress': args.compress,
+    'process_per_folder': args.process_set
   }
 
   source_folder = args.inputFolder
