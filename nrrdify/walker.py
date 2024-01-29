@@ -6,15 +6,21 @@
 #  Licensed under the 3-clause BSD License
 # ========================================================================
 
+from __future__ import annotations
 import logging
 import os
 import sys
+from typing import TYPE_CHECKING
 
 import pydicom
 import SimpleITK as sitk
 import tqdm
 
 from . import dicomvolume
+
+
+if TYPE_CHECKING:
+  from typing import Dict, Generator
 
 
 class Walker:
@@ -34,6 +40,19 @@ class Walker:
       self.logger.error('Destination directory (%s) does not exist! Exiting...', destination)
       return
     self.logger.info('Input (%s) and output (%s) valid, scanning input folder for DICOM files', source, destination)
+    try:
+      for folder, datasets in self.scan_folder(source):
+        if process_per_folder and structure == 'source':
+          dest = os.path.join(destination, os.path.relpath(folder, source))
+        else:
+          dest = destination
+        self._process_results(datasets, dest, **kwargs)
+    except KeyboardInterrupt:
+      return
+
+  def scan_folder(self, source) -> Generator[str, Dict[str, dicomvolume.DicomVolume]]:
+    process_per_folder = self.config.get('process_per_folder', True)
+
     datasets = {}  # Holds the dicom files, sorted by series UID ({seriesUID: [files]})
     for curdir, dirnames, fnames in os.walk(source):
       if len(fnames) > 0:  # Only process folder if it contains files
@@ -83,31 +102,22 @@ class Walker:
               else:
                 imagetype = tuple(imagetype)
 
-              if series_uid not in datasets:
-                datasets[series_uid] = {}
-
-              if imagetype not in datasets[series_uid]:
-                datasets[series_uid][imagetype] = dicomvolume.DicomVolume()
-              else:
-                datasets[series_uid][imagetype].addSlice(dicfile)
+              ds_id = (series_uid, imagetype)
+              if ds_id not in datasets:
+                datasets[ds_id] = dicomvolume.DicomVolume()
+              datasets[ds_id].addSlice(dicfile)
             except KeyboardInterrupt:
-              return
+              raise
             except:
               self.logger.error('DOH!! Something went wrong!', exc_info=True)
         finally:
           if self.config.get('use_pbar', True):
             it.close()
         if process_per_folder:
-          if structure == 'source':
-            dest = os.path.join(destination, os.path.relpath(curdir, source))
-          else:
-            dest = destination
-
-          self._process_results(datasets, dest, **kwargs)
+          yield curdir, datasets
           datasets = {}
-
     if not process_per_folder:
-      self._process_results(datasets, destination, **kwargs)
+      yield source, datasets
 
   def _process_results(self, datasets, destination, **kwargs):
     # Done scanning files, now make some NRRDs out of them!
@@ -115,38 +125,45 @@ class Walker:
     if len(datasets) > 1:  # If more than 1 series is found, a custom filename is not possible
       kwargs['filename'] = None
 
-    for ds in datasets:  # Multiple datasets, so generate name from DICOM
-      volume_idx = 0
-      for volume in datasets[ds].values():
-        sub_volumes = {}
-        split_3d_keys = self.config.get('split_3D', [])
+    series = {}
 
-        volume.sortSlices()
-        if volume.is_valid and not volume.is_equidistant and len(split_3d_keys) > 0:
-          self.logger.info('Splitting volume by keys: %s', split_3d_keys)
-          for dic_slice in volume.slices:
-            set_id = []
-            for k in split_3d_keys:
-              set_id.append(str(getattr(dic_slice, k, None)))
-            if len(set_id) == 1:
-              set_id = set_id[0]
-            else:
-              set_id = tuple(set_id)
+    for ds_id, volume in datasets.items():
+      if ds_id[0] not in series:
+        series[ds_id[0]] = 0
+      else:
+        series[ds_id[0]] += 1
+
+      volume_idx = series[ds_id[0]]
+
+      sub_volumes = {}
+      split_3d_keys = self.config.get('split_3D', [])
+
+      volume.sortSlices()
+      if volume.is_valid and not volume.is_equidistant and len(split_3d_keys) > 0:
+        self.logger.info('Splitting volume by keys: %s', split_3d_keys)
+        for dic_slice in volume.slices:
+          set_id = []
+          for k in split_3d_keys:
+            set_id.append(str(getattr(dic_slice, k, None)))
+          if len(set_id) == 1:
+            set_id = set_id[0]
+          else:
+            set_id = tuple(set_id)
 
             if set_id not in sub_volumes:
               sub_volumes[set_id] = dicomvolume.DicomVolume()
 
-            sub_volumes[set_id].addSlice(dic_slice)
+          sub_volumes[set_id].addSlice(dic_slice)
+      else:
+        sub_volumes[0] = volume
+
+      for v in sub_volumes:
+        if kwargs.get('just_check', False):
+          self.check_volume(sub_volumes[v], ds_id[0], volume_idx)
         else:
-          sub_volumes[0] = volume
-
-        for v in sub_volumes:
-          if kwargs.get('just_check', False):
-            self.check_volume(sub_volumes[v], ds, volume_idx)
-          else:
-            self.process_volume(sub_volumes[v], volume_idx, destination, **kwargs)
-
-          volume_idx += 1
+          self.process_volume(sub_volumes[v], volume_idx, destination, **kwargs)
+        series[ds_id[0]] += 1
+        volume_idx = series[ds_id[0]]
 
   def process_volume(self, volume, volume_idx, destination, **kwargs):
     filename = kwargs.get('filename', None)
@@ -201,7 +218,12 @@ class Walker:
       self.logger.error('Oh Oh... something went wrong...', exc_info=True)
 
   def _process4d(self, volume: dicomvolume.DicomVolume, filename, destination):
-    if volume.split4D('DiffusionBValue', 2000) and volume.sortSlices4D():
+    if self.config.get('split_tag', None) is not None and volume.split4D(self.config['split_tag']) and volume.sortSlices4D():
+      self.logger.info('Volume is 4D, split on %s', self.config['split_tag'])
+      prefix = '_'
+      split_tag = self.config['split_tag']
+      split_unit = 'N/A'
+    elif volume.split4D('DiffusionBValue', 2000) and volume.sortSlices4D():
       # Volume is DWI
       self.logger.info('Volume is 4D, splitting DWI on standard bvalue tag')
       prefix = '_b'
