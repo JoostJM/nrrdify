@@ -349,13 +349,14 @@ class DicomVolume:
     # Xy = 3
     # Yy = 4
     # Zy = 5
-    # Xz = 6
-    # Yz = 7
-    # Zz = 8
+    z_cos = np.cross(image_orientation[:3], image_orientation[3:])
+    # Xz = 6 (0)
+    # Yz = 7 (1)
+    # Zz = 8 (2)
 
     if image_orientation[3] >= image_orientation[0]:  # |Xy| >= |Xx| (saggital)
       return 'sag'
-    elif image_orientation[4] >= image_orientation[7]:  # |Yy| >= |Yz| (Transversal)
+    elif image_orientation[4] >= z_cos[1]:  # |Yy| >= |Yz| (Transversal)
       return 'tra'
     else:  # Coronal
       return 'cor'
