@@ -13,10 +13,12 @@ import numpy as np
 import SimpleITK as sitk
 import six
 
+from . import getPostProcessing
+
 
 class DicomVolume:
 
-  def __init__(self, post_processing=None):
+  def __init__(self):
     self.slices = []
     self.slices4D = None
     self.logger = logging.getLogger('nrrdify.DicomVolume')
@@ -35,7 +37,7 @@ class DicomVolume:
     self.split_tag = None
     self.n_pos = 1
 
-    self.post_processing = post_processing
+    self.post_processing = getPostProcessing()
 
   def __getitem__(self, item):
     return self.slices[item]

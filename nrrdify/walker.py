@@ -14,7 +14,7 @@ import pydicom
 import SimpleITK as sitk
 import tqdm
 
-from . import dicomvolume, post_processing
+from . import dicomvolume
 
 
 class Walker:
@@ -22,7 +22,6 @@ class Walker:
     self.logger = logging.getLogger('nrrdify.walker')
     self.config = kwargs
     self.counter = 0
-    self.post_processing = post_processing
 
   def run(self, source, destination, **kwargs):
     process_per_folder = self.config.get('process_per_folder', False)
@@ -81,7 +80,7 @@ class Walker:
                 datasets[series_uid] = {}
 
               if imagetype not in datasets[series_uid]:
-                datasets[series_uid][imagetype] = dicomvolume.DicomVolume(self.post_processing)
+                datasets[series_uid][imagetype] = dicomvolume.DicomVolume()
               else:
                 datasets[series_uid][imagetype].addSlice(dicfile)
             except KeyboardInterrupt:
@@ -125,7 +124,7 @@ class Walker:
               set_id = tuple(set_id)
 
             if set_id not in sub_volumes:
-              sub_volumes[set_id] = dicomvolume.DicomVolume(post_processing)
+              sub_volumes[set_id] = dicomvolume.DicomVolume()
 
             sub_volumes[set_id].addSlice(dic_slice)
         else:
