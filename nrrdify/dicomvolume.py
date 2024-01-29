@@ -10,6 +10,7 @@ import logging
 import struct
 
 import numpy as np
+from pydicom.multival import MultiValue
 import SimpleITK as sitk
 import six
 
@@ -201,21 +202,24 @@ class DicomVolume:
 
     return self.is_4D
 
-  def split4D(self, splitTag='DiffusionBValue', max_value=None):
+  def split4D(self, splitTag='DiffusionBValue', max_value=None, def_val=None):
     self.slices4D = {}
     self.split_tag = splitTag
     for s in self.slices:
       if isinstance(splitTag, int):
-        temporal_position = s.get(splitTag, None)
-        if temporal_position is not None:
+        temporal_position = s.get(splitTag, def_val)
+        if temporal_position is not None and temporal_position != def_val:
           temporal_position = temporal_position.value
       else:
-        temporal_position = getattr(s, splitTag, None)
+        temporal_position = getattr(s, splitTag, def_val)
       if temporal_position is None:
         self.logger.error('Split Tag %s not valid, missing value in file %s', splitTag, s.filename)
         return False
 
       is_string_temporal = False
+      if isinstance(temporal_position, MultiValue):
+        temporal_position = '-'.join(temporal_position)
+
       if isinstance(temporal_position, float):
         if temporal_position.is_integer():
           temporal_position = int(temporal_position)

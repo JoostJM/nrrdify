@@ -50,6 +50,8 @@ def main(args=None):
                            'for already existing files is skipped.')
   parser.add_argument('--check', action='store_true',
                       help='if this argument is specified, DICOMS are checked but not converted.')
+  parser.add_argument('--split-tag', default=None,
+                      help='Dicom tag to split a 4D volume. If invalid, also tries DWI b-value and TemporalPositionIdentifier')
   parser.add_argument('--split3d', action='append', default=None)
 
   args = parser.parse_args(args)
@@ -73,6 +75,7 @@ def main(args=None):
     'dump_protocol': args.dump_protocol,
     'combine4d': args.combine4d,
     'compress': args.compress,
+    'split_tag': args.split_tag,
     'process_per_folder': args.process_set
   }
 
